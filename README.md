@@ -23,7 +23,7 @@ It also provides a non-duplicative way to force ZenMux provider routing via the 
 Install the plugin using the OpenCode CLI:
 
 ```bash
-opencode plugin install @daika7ana/opencode-zenmux-plugin
+opencode plugin @daika7ana/opencode-zenmux-plugin
 ```
 
 Or add it to your OpenCode config (`opencode.json` or `.opencode/opencode.json`):

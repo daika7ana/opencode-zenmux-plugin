@@ -1,6 +1,6 @@
 {
   "name": "@daika7ana/opencode-zenmux-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -19,8 +19,10 @@
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.62.1"
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": {
+    "./server": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
