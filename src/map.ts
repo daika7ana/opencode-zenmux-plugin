@@ -21,9 +21,11 @@ export function mapZenMuxModel(
   const inputMods = model.input_modalities ?? []
   const outputMods = model.output_modalities ?? []
 
+  // ZenMux prices are already USD per 1M tokens, which matches the unit
+  // OpenCode expects for ModelV2 cost fields.
   const getPricing = (arr: { value: number }[] | undefined): number => {
     if (!arr || arr.length === 0) return 0
-    return arr[0].value / 1_000_000
+    return arr[0].value
   }
 
   const cacheWrite =

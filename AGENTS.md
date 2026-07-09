@@ -43,7 +43,3 @@ pnpm format:check
 
 - Prettier config: no semicolons, single quotes, `trailingComma: "es5"`, `printWidth: 100`, `tabWidth: 2`.
 - ESLint config (`eslint.config.js`) uses `typescript-eslint/recommended` + `eslint-config-prettier` and only lints `src/**/*.ts`.
-
-## Reference Docs
-
-- Detailed design and mapping rules are in `PLAN.md`.
