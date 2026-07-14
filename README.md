@@ -8,35 +8,76 @@ An [OpenCode](https://opencode.ai) plugin that keeps the ZenMux model catalog up
 
 It also provides a non-duplicative way to force ZenMux provider routing via the `model:provider` syntax using a user-controlled routing table.
 
+## Prerequisites
+
+- [OpenCode](https://opencode.ai) CLI installed and working
+- A ZenMux API key (get one at https://zenmux.ai)
+
+## Quick Start
+
+1. **Install:**
+   ```bash
+   opencode plugin --global @daika7ana/opencode-zenmux-plugin@latest
+   ```
+2. **Authenticate:**
+   ```bash
+   export ZENMUX_API_KEY="your-key"
+   ```
+   Or run `/connect zenmux` inside OpenCode to store the key in its auth system.
+3. **Refresh:**
+   ```bash
+   opencode models --refresh
+   ```
+
 ## Features
 
 - **Live model refresh** — fetches the public ZenMux catalog on startup and on `opencode models --refresh`.
 - **Provider routing** — rewrite `api.id` to `modelId:providerSlug` for any model without cluttering the model list.
 - **Auth hook** — adds `/connect zenmux` for storing an API key in OpenCode's auth system.
-- **JSONC support** — routing files can include comments.
+- **JSONC support** — both the plugin config file and routing files can include comments.
 - **Configurable** — override base URL, models URL, output token limit, non-chat filtering, and more.
 
 ## Installation
 
 ### From npm
 
-Install the plugin using the OpenCode CLI:
+This plugin is meant to be installed **globally**, not per-project. Use the `--global` flag and the `@latest` tag so OpenCode always resolves the newest published version:
 
 ```bash
-opencode plugin @daika7ana/opencode-zenmux-plugin
+opencode plugin --global @daika7ana/opencode-zenmux-plugin@latest
 ```
 
-Or add it to your OpenCode config (`opencode.json` or `.opencode/opencode.json`):
+> The command above uses the current OpenCode CLI syntax. If your version of OpenCode uses a different plugin command, adjust accordingly.
 
-```json
-{
-  "plugin": ["@daika7ana/opencode-zenmux-plugin"]
-}
+This adds the plugin to your global OpenCode config (`~/.config/opencode/opencode.json`) and installs it into the OpenCode plugin cache.
+
+After installing, refresh the model catalog so OpenCode picks up the ZenMux models:
+
+```bash
+opencode models --refresh
 ```
 
-OpenCode installs npm plugins automatically on startup using Bun.
+#### Force an update
+
+Use the `--force` flag to replace the existing cached version:
+
+```bash
+opencode plugin --global --force @daika7ana/opencode-zenmux-plugin@latest
+```
+
+If a stale cache still prevents the update from being applied, delete the cached package and reinstall:
+
+```bash
+rm -rf ~/.cache/opencode/packages/@daika7ana/opencode-zenmux-plugin@latest
+opencode plugin --global @daika7ana/opencode-zenmux-plugin@latest
+```
+
+**Next:** [Configure authentication](#authentication) and optionally set up [provider routing](#provider-routing).
 
 ### From source
+
+<details>
+<summary>Build and install from source</summary>
 
 Build the plugin locally:
 
@@ -45,7 +86,7 @@ pnpm install
 pnpm build
 ```
 
-Then add it to your OpenCode config (`opencode.json`):
+Then add it to your global OpenCode config (`~/.config/opencode/opencode.json`):
 
 ```json
 {
@@ -53,19 +94,59 @@ Then add it to your OpenCode config (`opencode.json`):
 }
 ```
 
-Then create a `zenmux-plugin.json` file in your project root, `.opencode/`, or `~/.config/opencode/`:
+After installing from source, refresh the model catalog so OpenCode picks up the ZenMux models:
 
-```json
+```bash
+opencode models --refresh
+```
+
+**Next:** [Configure authentication](#authentication) and optionally set up [provider routing](#provider-routing).
+
+</details>
+
+## Configuration
+
+The plugin uses two types of files:
+
+- **`zenmux-plugin.json`** — plugin settings (base URL, token limits, etc.) with an optional inline `routing` field.
+- **`zenmux-providers.json`** — standalone routing table only (no settings). See [Provider routing](#provider-routing).
+
+### Config file
+
+Create a `zenmux-plugin.json` file in your project root, `.opencode/`, or `~/.config/opencode/`. Both `.json` and `.jsonc` (JSON with comments) extensions are accepted; the plugin looks for the first existing file in this order:
+
+1. `{projectRoot}/zenmux-plugin.json`
+2. `{projectRoot}/.opencode/zenmux-plugin.json`
+3. `~/.config/opencode/zenmux-plugin.json`
+
+Example:
+
+```jsonc
 {
+  // Base URL for actual ZenMux API calls
   "baseURL": "https://zenmux.ai/api/v1",
+
+  // URL to fetch the public model catalog
   "modelsURL": "https://zenmux.ai/api/v1/models",
+
+  // Optional: explicit path to a routing file
   "routingFile": null,
+
+  // Default output token limit (ZenMux does not expose this)
   "defaultOutputTokens": 16384,
+
+  // Hide models that cannot produce text
   "excludeNonChat": true,
+
+  // Include :providerSlug in the model id itself
   "routedModelIds": false,
-  "routing": [{ "model": "z-ai/glm-5.2", "provider": "streamlake" }]
+
+  // Inline routing table (same format as a routing file)
+  "routing": [{ "model": "z-ai/glm-5.2", "provider": "streamlake" }],
 }
 ```
+
+### Plugin tuple override
 
 You can also pass options directly in the plugin tuple in `opencode.json`. Those override the config file:
 
@@ -82,18 +163,29 @@ You can also pass options directly in the plugin tuple in `opencode.json`. Those
 }
 ```
 
-## Configuration options
+### Configuration options
 
-All options can be set in `zenmux-plugin.json` (or `zenmux-plugin.jsonc`) or passed directly in the plugin tuple in `opencode.json`. Plugin tuple options override the config file.
+All options can be set in `zenmux-plugin.json` (or `zenmux-plugin.jsonc`). All options except `routing` can also be passed directly in the plugin tuple in `opencode.json`. The `routing` option can only be set in the config file because it belongs in a dedicated routing table. Plugin tuple options override the config file.
 
-| Option                | Type             | Default                           | Description                                                                          |
-| --------------------- | ---------------- | --------------------------------- | ------------------------------------------------------------------------------------ |
-| `baseURL`             | `string`         | `https://zenmux.ai/api/v1`        | Base URL for actual ZenMux API calls.                                                |
-| `modelsURL`           | `string`         | `https://zenmux.ai/api/v1/models` | URL to fetch the public model catalog.                                               |
-| `routingFile`         | `string \| null` | `null`                            | Explicit path to the routing file; overrides the default search order.               |
-| `defaultOutputTokens` | `number`         | `16384`                           | Default `limit.output` because ZenMux does not expose max output tokens.             |
-| `excludeNonChat`      | `boolean`        | `true`                            | Exclude models whose output modality is not `text`.                                  |
-| `routedModelIds`      | `boolean`        | `false`                           | Put the provider suffix into the model `id` itself (see [below](#routed-model-ids)). |
+| Option                | Type                              | Default                           | Description                                                                             |
+| --------------------- | --------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------- |
+| `baseURL`             | `string`                          | `https://zenmux.ai/api/v1`        | Base URL for actual ZenMux API calls.                                                   |
+| `modelsURL`           | `string`                          | `https://zenmux.ai/api/v1/models` | URL to fetch the public model catalog.                                                  |
+| `routingFile`         | `string \| null`                  | `null`                            | Explicit path to the routing file; overrides the default search order.                  |
+| `routing`             | `array \| Record<string, string>` | —                                 | In-file routing table; array or object form. See [Provider routing](#provider-routing). |
+| `defaultOutputTokens` | `number`                          | `16384`                           | Default `limit.output` because ZenMux does not expose max output tokens.                |
+| `excludeNonChat`      | `boolean`                         | `true`                            | Exclude models whose output modality is not `text`.                                     |
+| `routedModelIds`      | `boolean`                         | `false`                           | Put the provider suffix into the model `id` itself (see [below](#routed-model-ids)).    |
+
+### Option precedence
+
+Options are merged in this order (later wins):
+
+1. Plugin defaults
+2. `zenmux-plugin.json` / `zenmux-plugin.jsonc`
+3. Options passed directly in the plugin tuple in `opencode.json` (does not include `routing`)
+
+That means plugin tuple options always override the config file, and the config file overrides the built-in defaults. The `routing` field can only be set in the config file.
 
 ## Authentication
 
@@ -117,26 +209,32 @@ Then enter your API key. It will be stored in OpenCode's auth system and used au
 
 ## Provider routing
 
-ZenMux supports forced routing by sending `modelId:providerSlug` as the model id. The plugin applies this via a routing table, which can live in `zenmux-plugin.json` under the `routing` field or in a separate routing file.
+ZenMux supports forced routing by sending `modelId:providerSlug` as the model id. The plugin applies this via a routing table, which can live in `zenmux-plugin.json` under the `routing` field or in a separate routing file. You do not need both.
+
+When a routing entry exists, the plugin sets `api.id = "modelId:providerSlug"` for that model. The OpenCode model list still shows the model once.
+
+### Routing precedence
+
+If multiple routing sources are present, they are checked in this order and the first match wins:
+
+1. **`routingFile`** in plugin options — explicit path to a routing file.
+2. **`routing` field** in `zenmux-plugin.json` / `zenmux-plugin.jsonc`.
+3. **Default routing file search** (see below).
+
+If `routingFile` is set but the file does not exist, routing is disabled for that refresh; the plugin does **not** fall back to the inline `routing` field or the default file search.
 
 ### Routing file names
 
-If you prefer to keep routing in its own file, the plugin looks for the first existing file in this order:
+If you prefer to keep routing in its own file, the plugin looks for the first existing file in this order. Both `.json` and `.jsonc` (JSON with comments) extensions are accepted; `.jsonc` takes precedence when both exist in the same directory.
 
-1. `{projectRoot}/zenmux-providers.jsonc`
-2. `{projectRoot}/zenmux-providers.json`
-3. `{projectRoot}/zenmux-routing.jsonc`
-4. `{projectRoot}/zenmux-routing.json`
-5. `{projectRoot}/.opencode/zenmux-providers.jsonc`
-6. `{projectRoot}/.opencode/zenmux-providers.json`
-7. `{projectRoot}/.opencode/zenmux-routing.jsonc`
-8. `{projectRoot}/.opencode/zenmux-routing.json`
-9. `~/.config/opencode/zenmux-providers.jsonc`
-10. `~/.config/opencode/zenmux-providers.json`
-11. `~/.config/opencode/zenmux-routing.jsonc`
-12. `~/.config/opencode/zenmux-routing.json`
+1. `{projectRoot}/zenmux-providers.json`
+2. `{projectRoot}/zenmux-routing.json`
+3. `{projectRoot}/.opencode/zenmux-providers.json`
+4. `{projectRoot}/.opencode/zenmux-routing.json`
+5. `~/.config/opencode/zenmux-providers.json`
+6. `~/.config/opencode/zenmux-routing.json`
 
-Use `routingFile` in plugin options to override this search.
+Use `routingFile` in plugin options to override this search and point to a custom file.
 
 ### Format
 
@@ -160,8 +258,6 @@ Object form:
   "z-ai/glm-5.2": "streamlake",
 }
 ```
-
-When a routing entry exists, the plugin sets `api.id = "modelId:providerSlug"` for that model. The OpenCode model list still shows the model once.
 
 ### Routed model ids
 
