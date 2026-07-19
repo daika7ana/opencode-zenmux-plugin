@@ -33,9 +33,10 @@ It also provides a non-duplicative way to force ZenMux provider routing via the 
 
 - **Live model refresh** — fetches the public ZenMux catalog on startup and on `opencode models --refresh`.
 - **Provider routing** — rewrite `api.id` to `modelId:providerSlug` for any model without cluttering the model list.
+- **Anthropic Messages API** — route specific models through ZenMux's Anthropic endpoint for extended features (extended thinking, prompt caching, etc.).
 - **Auth hook** — adds `/connect zenmux` for storing an API key in OpenCode's auth system.
 - **JSONC support** — both the plugin config file and routing files can include comments.
-- **Configurable** — override base URL, models URL, output token limit, non-chat filtering, and more.
+- **Configurable** — override base URL, Anthropic base URL, models URL, output token limit, non-chat filtering, and more.
 
 ## Installation
 
@@ -167,15 +168,16 @@ You can also pass options directly in the plugin tuple in `opencode.json`. Those
 
 All options can be set in `zenmux-plugin.json` (or `zenmux-plugin.jsonc`). All options except `routing` can also be passed directly in the plugin tuple in `opencode.json`. The `routing` option can only be set in the config file because it belongs in a dedicated routing table. Plugin tuple options override the config file.
 
-| Option                | Type                              | Default                           | Description                                                                             |
-| --------------------- | --------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------- |
-| `baseURL`             | `string`                          | `https://zenmux.ai/api/v1`        | Base URL for actual ZenMux API calls.                                                   |
-| `modelsURL`           | `string`                          | `https://zenmux.ai/api/v1/models` | URL to fetch the public model catalog.                                                  |
-| `routingFile`         | `string \| null`                  | `null`                            | Explicit path to the routing file; overrides the default search order.                  |
-| `routing`             | `array \| Record<string, string>` | —                                 | In-file routing table; array or object form. See [Provider routing](#provider-routing). |
-| `defaultOutputTokens` | `number`                          | `16384`                           | Default `limit.output` because ZenMux does not expose max output tokens.                |
-| `excludeNonChat`      | `boolean`                         | `true`                            | Exclude models whose output modality is not `text`.                                     |
-| `routedModelIds`      | `boolean`                         | `false`                           | Put the provider suffix into the model `id` itself (see [below](#routed-model-ids)).    |
+| Option                | Type             | Default                              | Description                                                                                   |
+| --------------------- | ---------------- | ------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `baseURL`             | `string`         | `https://zenmux.ai/api/v1`           | Base URL for actual ZenMux API calls.                                                         |
+| `anthropicBaseURL`    | `string`         | `https://zenmux.ai/api/anthropic/v1` | Base URL for Anthropic Messages API calls (used when a routing entry has `sdk: "anthropic"`). |
+| `modelsURL`           | `string`         | `https://zenmux.ai/api/v1/models`    | URL to fetch the public model catalog.                                                        |
+| `routingFile`         | `string \| null` | `null`                               | Explicit path to the routing file; overrides the default search order.                        |
+| `routing`             | `array`          | —                                    | In-file routing table. See [Provider routing](#provider-routing).                             |
+| `defaultOutputTokens` | `number`         | `16384`                              | Default `limit.output` because ZenMux does not expose max output tokens.                      |
+| `excludeNonChat`      | `boolean`        | `true`                               | Exclude models whose output modality is not `text`.                                           |
+| `routedModelIds`      | `boolean`        | `false`                              | Put the provider suffix into the model `id` itself (see [below](#routed-model-ids)).          |
 
 ### Option precedence
 
@@ -211,7 +213,7 @@ Then enter your API key. It will be stored in OpenCode's auth system and used au
 
 ZenMux supports forced routing by sending `modelId:providerSlug` as the model id. The plugin applies this via a routing table, which can live in `zenmux-plugin.json` under the `routing` field or in a separate routing file. You do not need both.
 
-When a routing entry exists, the plugin sets `api.id = "modelId:providerSlug"` for that model. The OpenCode model list still shows the model once.
+When a routing entry exists with a `provider`, the plugin sets `api.id = "modelId:providerSlug"` for that model. If `provider` is omitted (for example when only swapping the SDK), `api.id` is left as the plain model id. The OpenCode model list still shows the model once.
 
 ### Routing precedence
 
@@ -238,26 +240,35 @@ Use `routingFile` in plugin options to override this search and point to a custo
 
 ### Format
 
-Array form:
-
 ```jsonc
 [
-  // Route Claude through Amazon Bedrock
+  // Route Claude through Amazon Bedrock (OpenAI-compatible)
   { "model": "anthropic/claude-sonnet-5", "provider": "amazon-bedrock" },
 
-  // Route GLM through StreamLake
+  // Route GLM through StreamLake (OpenAI-compatible)
   { "model": "z-ai/glm-5.2", "provider": "streamlake" },
+
+  // Route MiniMax M3 through ZenMux's Anthropic Messages API endpoint
+  { "model": "minimax/minimax-m3", "provider": "minimax", "sdk": "anthropic" },
+
+  // Route Claude through ZenMux's Anthropic endpoint without forcing a specific provider
+  { "model": "anthropic/claude-sonnet-5", "sdk": "anthropic" },
 ]
 ```
 
-Object form:
+Both `provider` and `sdk` are optional. When `provider` is omitted, the model id is not rewritten and only the SDK swap is applied (useful when you want the Anthropic Messages API format without forcing a specific upstream provider).
 
-```jsonc
-{
-  "anthropic/claude-sonnet-5": "amazon-bedrock",
-  "z-ai/glm-5.2": "streamlake",
-}
-```
+#### Anthropic Messages API routing
+
+Some models expose additional features through the Anthropic Messages API format (extended thinking, prompt caching, etc.). Set `"sdk": "anthropic"` on a routing entry to route that model through ZenMux's Anthropic endpoint instead of the default OpenAI-compatible endpoint.
+
+When `sdk` is `"anthropic"`:
+
+- The model uses `@ai-sdk/anthropic` instead of `@ai-sdk/openai-compatible`
+- Requests go to `anthropicBaseURL` (default: `https://zenmux.ai/api/anthropic/v1`) instead of `baseURL`
+- Auth uses the same `ZENMUX_API_KEY` (sent as `x-api-key` header)
+
+The `sdk` and `provider` fields are both optional. `sdk` defaults to `"openai"`; existing routing files without `sdk` continue to work unchanged. When `provider` is omitted alongside an SDK swap, the model id is left as-is and only the SDK + base URL change.
 
 ### Routed model ids
 
@@ -309,7 +320,7 @@ The plugin exports a default OpenCode plugin function that registers three hooks
 
 1. **`config`** — registers the `zenmux` provider with `@ai-sdk/openai-compatible` and the configured `baseURL`.
 2. **`auth`** — adds an API key auth method for `/connect zenmux`.
-3. **`provider.models`** — fetches the live ZenMux catalog, loads the routing table, maps records to OpenCode's `ModelV2` shape, and applies routing.
+3. **`provider.models`** — fetches the live ZenMux catalog, loads the routing table, maps records to OpenCode's `ModelV2` shape, and applies routing. Models with `sdk: "anthropic"` in the routing table use `@ai-sdk/anthropic` and point to `anthropicBaseURL`.
 
 The public models endpoint does not require authentication. The API key is only used by the actual provider for chat/completion requests.
 

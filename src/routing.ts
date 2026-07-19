@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import stripJsonComments from 'strip-json-comments'
-import type { ZenMuxPluginOptions, ZenMuxRoutingTable } from './types.js'
+import type { RoutingInfo, ZenMuxPluginOptions, ZenMuxRoutingTable } from './types.js'
 
 const ROUTING_FILE_NAMES = [
   'zenmux-providers.jsonc',
@@ -33,14 +33,14 @@ const ROUTING_FILE_NAMES = [
  * 12. ~/.config/opencode/zenmux-routing.jsonc
  * 13. ~/.config/opencode/zenmux-routing.json
  *
- * Returns a Record<modelId, providerSlug>.
+ * Returns a Record<modelId, RoutingInfo>.
  * If no file is found, returns an empty record.
  */
 export async function loadRoutingTable(
   opts: ZenMuxPluginOptions,
   projectDirectory: string,
   inlineRouting?: ZenMuxRoutingTable
-): Promise<Record<string, string>> {
+): Promise<Record<string, RoutingInfo>> {
   // 1. Explicit routingFile option takes precedence
   if (opts.routingFile) {
     const parsed = await tryReadRoutingFile(opts.routingFile)
@@ -89,15 +89,20 @@ async function tryReadRoutingFile(path: string): Promise<ZenMuxRoutingTable | nu
   }
 }
 
-function normalizeRoutingTable(table: ZenMuxRoutingTable): Record<string, string> {
-  if (Array.isArray(table)) {
-    const result: Record<string, string> = {}
-    for (const entry of table) {
-      if (entry.model && entry.provider) {
-        result[entry.model] = entry.provider
-      }
-    }
-    return result
+function normalizeRoutingTable(table: ZenMuxRoutingTable): Record<string, RoutingInfo> {
+  if (!Array.isArray(table)) {
+    throw new Error(
+      'Invalid routing table: expected an array of { "model", "provider"?,"sdk"? } entries. ' +
+        'The object form ({ "model-id": "provider-slug" }) is no longer supported.'
+    )
   }
-  return table
+  const result: Record<string, RoutingInfo> = {}
+  for (const entry of table) {
+    if (!entry.model) continue
+    const info: RoutingInfo = {}
+    if (entry.provider) info.provider = entry.provider
+    if (entry.sdk) info.sdk = entry.sdk
+    result[entry.model] = info
+  }
+  return result
 }
