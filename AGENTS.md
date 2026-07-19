@@ -27,7 +27,7 @@ pnpm format:check
   - `provider.models` hook fetches the live catalog and returns `Record<string, ModelV2>`.
 - `src/fetch.ts` calls `https://zenmux.ai/api/v1/models` (unauthenticated public endpoint) and, by default, drops models whose `output_modalities` does not include `text`.
 - `src/map.ts` maps ZenMux model records to OpenCode's `ModelV2` shape.
-- `src/routing.ts` loads `zenmux-providers.json` and applies the `:provider_slug` suffix to `api.id` without duplicating the model in the list.
+- `src/routing.ts` loads `zenmux-providers.json` and applies the `:provider_slug` suffix to `api.id` (only when `provider` is set) without duplicating the model in the list.
 
 ## Routing File
 
@@ -36,8 +36,8 @@ pnpm format:check
   2. `{projectDirectory}/zenmux-providers.json`
   3. `{projectDirectory}/.opencode/zenmux-providers.json`
   4. `~/.config/opencode/zenmux-providers.json`
-- Accepted formats: array of `{ "model": "...", "provider": "..." }` or `Record<modelId, providerSlug>`.
-- Routing rewrites `api.id` to `"modelId:providerSlug"`; actual chat calls still use `ZENMUX_API_KEY`.
+- Accepted format: array of `{ "model": "...", "provider"?, "sdk"? }` entries.
+- Both `provider` and `sdk` are optional. When `provider` is set, routing rewrites `api.id` to `"modelId:providerSlug"`. When only `sdk` is set (e.g. `"anthropic"`), the model id is left alone but the Anthropic SDK + base URL are applied. Actual chat calls still use `ZENMUX_API_KEY`.
 
 ## Style
 
