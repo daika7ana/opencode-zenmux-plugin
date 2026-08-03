@@ -139,8 +139,15 @@ Example:
   // Hide models that cannot produce text
   "excludeNonChat": true,
 
+  // Minutes to cache the ZenMux catalog on disk (0 disables)
+  "catalogCacheTTL": 60,
+
   // Include :providerSlug in the model id itself
   "routedModelIds": false,
+
+  // Model ids (substring match) that must pass reasoning_content back to the API.
+  // The plugin also auto-detects additional models from OpenCode's cached models.dev catalog.
+  "reasoningContentModels": ["deepseek", "glm", "minimax", "kimi", "mimo"],
 
   // Inline routing table (same format as a routing file)
   "routing": [{ "model": "z-ai/glm-5.2", "provider": "streamlake" }],
@@ -168,16 +175,18 @@ You can also pass options directly in the plugin tuple in `opencode.json`. Those
 
 All options can be set in `zenmux-plugin.json` (or `zenmux-plugin.jsonc`). All options except `routing` can also be passed directly in the plugin tuple in `opencode.json`. The `routing` option can only be set in the config file because it belongs in a dedicated routing table. Plugin tuple options override the config file.
 
-| Option                | Type             | Default                              | Description                                                                                   |
-| --------------------- | ---------------- | ------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `baseURL`             | `string`         | `https://zenmux.ai/api/v1`           | Base URL for actual ZenMux API calls.                                                         |
-| `anthropicBaseURL`    | `string`         | `https://zenmux.ai/api/anthropic/v1` | Base URL for Anthropic Messages API calls (used when a routing entry has `sdk: "anthropic"`). |
-| `modelsURL`           | `string`         | `https://zenmux.ai/api/v1/models`    | URL to fetch the public model catalog.                                                        |
-| `routingFile`         | `string \| null` | `null`                               | Explicit path to the routing file; overrides the default search order.                        |
-| `routing`             | `array`          | —                                    | In-file routing table. See [Provider routing](#provider-routing).                             |
-| `defaultOutputTokens` | `number`         | `16384`                              | Default `limit.output` because ZenMux does not expose max output tokens.                      |
-| `excludeNonChat`      | `boolean`        | `true`                               | Exclude models whose output modality is not `text`.                                           |
-| `routedModelIds`      | `boolean`        | `false`                              | Put the provider suffix into the model `id` itself (see [below](#routed-model-ids)).          |
+| Option                   | Type             | Default                                          | Description                                                                                                                                                                                                                                                                            |
+| ------------------------ | ---------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseURL`                | `string`         | `https://zenmux.ai/api/v1`                       | Base URL for actual ZenMux API calls.                                                                                                                                                                                                                                                  |
+| `anthropicBaseURL`       | `string`         | `https://zenmux.ai/api/anthropic/v1`             | Base URL for Anthropic Messages API calls (used when a routing entry has `sdk: "anthropic"`).                                                                                                                                                                                          |
+| `modelsURL`              | `string`         | `https://zenmux.ai/api/v1/models`                | URL to fetch the public model catalog.                                                                                                                                                                                                                                                 |
+| `routingFile`            | `string \| null` | `null`                                           | Explicit path to the routing file; overrides the default search order.                                                                                                                                                                                                                 |
+| `routing`                | `array`          | —                                                | In-file routing table. See [Provider routing](#provider-routing).                                                                                                                                                                                                                      |
+| `defaultOutputTokens`    | `number`         | `16384`                                          | Default `limit.output` because ZenMux does not expose max output tokens.                                                                                                                                                                                                               |
+| `excludeNonChat`         | `boolean`        | `true`                                           | Exclude models whose output modality is not `text`.                                                                                                                                                                                                                                    |
+| `catalogCacheTTL`        | `number`         | `60`                                             | Minutes to cache the ZenMux catalog (models + frontend enrichment) on disk so startups skip the network calls. `0` disables the cache. `opencode models --refresh` bypasses the cache and refetches.                                                                                   |
+| `routedModelIds`         | `boolean`        | `false`                                          | Put the provider suffix into the model `id` itself (see [below](#routed-model-ids)).                                                                                                                                                                                                   |
+| `reasoningContentModels` | `array`          | `["deepseek", "glm", "minimax", "kimi", "mimo"]` | Model ids (substring match) that must pass `reasoning_content` back to the API on subsequent turns; enables OpenCode's `interleaved` capability for them. The plugin also unions in models that OpenCode's cached models.dev catalog marks as needing `reasoning_content` passthrough. |
 
 ### Option precedence
 

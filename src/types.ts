@@ -70,6 +70,21 @@ export interface ZenMuxPluginOptions {
   excludeNonChat: boolean
   /** Include the provider suffix in the model id itself. Default: false */
   routedModelIds: boolean
+  /**
+   * Minutes to cache the fetched ZenMux catalog (models + frontend enrichment)
+   * on disk so startups skip the network calls. 0 disables the cache.
+   * Default: 60
+   */
+  catalogCacheTTL: number
+  /**
+   * Model ids (substring match) whose responses use `reasoning_content` and must
+   * pass it back to the API on subsequent turns. Enables OpenCode's
+   * `interleaved: { field: 'reasoning_content' }` capability for these models.
+   * The plugin also unions in any models that OpenCode's cached models.dev catalog
+   * marks as needing `reasoning_content` passthrough.
+   * Default: ['deepseek', 'glm', 'minimax', 'kimi', 'mimo']
+   */
+  reasoningContentModels: string[]
 }
 
 export const DEFAULT_OPTIONS: ZenMuxPluginOptions = {
@@ -81,6 +96,8 @@ export const DEFAULT_OPTIONS: ZenMuxPluginOptions = {
   defaultOutputTokens: 16384,
   excludeNonChat: true,
   routedModelIds: false,
+  catalogCacheTTL: 60,
+  reasoningContentModels: ['deepseek', 'glm', 'minimax', 'kimi', 'mimo'],
 }
 
 export interface ZenMuxPluginConfig extends ZenMuxPluginOptions {

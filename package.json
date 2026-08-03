@@ -1,6 +1,6 @@
 {
   "name": "@daika7ana/opencode-zenmux-plugin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -13,12 +13,12 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@opencode-ai/plugin": "latest",
-    "@types/node": "^26.1.0",
-    "eslint": "^10.6.0",
+    "@types/node": "^26.1.2",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.9.4",
+    "prettier": "^3.9.6",
     "typescript": "^5.7.0",
-    "typescript-eslint": "^8.62.1"
+    "typescript-eslint": "^8.65.0"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

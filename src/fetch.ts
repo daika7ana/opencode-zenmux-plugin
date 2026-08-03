@@ -1,19 +1,63 @@
+import { createHash } from 'node:crypto'
 import type {
   ZenMuxFrontendModel,
   ZenMuxModel,
   ZenMuxModelsResponse,
   ZenMuxPluginOptions,
 } from './types.js'
+import { readCache, writeCache } from './cache.js'
 
 /**
  * Fetch the ZenMux model catalog, enriched with data from the frontend API
  * (max_completion_tokens, suitable_api) cross-referenced by slug ↔ id.
+ *
+ * Results are cached on disk (keyed by modelsURL + frontendURL) for
+ * `opts.catalogCacheTTL` minutes so startups skip the network calls.
  *
  * When opts.excludeNonChat is true, models are filtered using suitable_api
  * (preferring "chat.completions" presence) with a fallback to
  * output_modalities.includes("text") when frontend data is unavailable.
  */
 export async function fetchModels(opts: ZenMuxPluginOptions): Promise<ZenMuxModel[]> {
+  const ttlMs = opts.catalogCacheTTL * 60_000
+  const cacheName = cacheFileName(opts)
+  const forceRefresh = isRefreshInvocation()
+
+  if (!forceRefresh && ttlMs > 0) {
+    const cached = await readCache<ZenMuxModel[]>(cacheName, ttlMs)
+    if (cached) {
+      return opts.excludeNonChat ? cached.filter(isChatModel) : cached
+    }
+  }
+
+  const enriched = await fetchAndEnrich(opts)
+
+  if (ttlMs > 0) {
+    await writeCache(cacheName, enriched)
+  }
+
+  return opts.excludeNonChat ? enriched.filter(isChatModel) : enriched
+}
+
+/**
+ * True when this process is an `opencode models --refresh` invocation, which
+ * bypasses the disk cache and refetches (then rewrites the cache). Plugins run
+ * in-process, so OpenCode's CLI args are visible here.
+ */
+function isRefreshInvocation(): boolean {
+  const args = process.argv.slice(2)
+  return args.includes('models') && (args.includes('--refresh') || args.includes('-r'))
+}
+
+function cacheFileName(opts: ZenMuxPluginOptions): string {
+  const hash = createHash('sha1')
+    .update(`${opts.modelsURL}\n${opts.frontendURL}`)
+    .digest('hex')
+    .slice(0, 16)
+  return `zenmux-models-${hash}.json`
+}
+
+async function fetchAndEnrich(opts: ZenMuxPluginOptions): Promise<ZenMuxModel[]> {
   const [modelsResponse, frontendResponse] = await Promise.allSettled([
     globalThis.fetch(opts.modelsURL),
     globalThis.fetch(opts.frontendURL),
@@ -45,9 +89,16 @@ export async function fetchModels(opts: ZenMuxPluginOptions): Promise<ZenMuxMode
 
   if (frontendResponse.status === 'fulfilled' && frontendResponse.value.ok) {
     try {
-      const frontendJson = (await frontendResponse.value.json()) as ZenMuxFrontendModel[]
-      if (Array.isArray(frontendJson)) {
-        for (const fe of frontendJson) {
+      const frontendJson = (await frontendResponse.value.json()) as
+        ZenMuxFrontendModel[] | { success?: boolean; data?: ZenMuxFrontendModel[] }
+      // The API returns { success, data: [...] }; accept a bare array too for robustness.
+      const frontendModels = Array.isArray(frontendJson)
+        ? frontendJson
+        : Array.isArray(frontendJson.data)
+          ? frontendJson.data
+          : null
+      if (frontendModels) {
+        for (const fe of frontendModels) {
           if (typeof fe.slug === 'string') {
             frontendBySlug.set(fe.slug, {
               max_completion_tokens: fe.max_completion_tokens,
@@ -65,10 +116,6 @@ export async function fetchModels(opts: ZenMuxPluginOptions): Promise<ZenMuxMode
 
   const enriched =
     frontendBySlug.size > 0 ? applyFrontendEnrichment(models, frontendBySlug) : models
-
-  if (opts.excludeNonChat) {
-    return enriched.filter(isChatModel)
-  }
 
   return enriched
 }
