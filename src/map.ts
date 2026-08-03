@@ -13,12 +13,16 @@ import type {
  * @param providerID - The OpenCode provider id ("zenmux").
  * @param routing - The loaded routing table (modelId → RoutingInfo).
  * @param opts - Plugin options.
+ * @param reasoningContentSlugs - Model ids (lowercased) that models.dev marks as
+ *   requiring `reasoning_content` passthrough; unioned with
+ *   `opts.reasoningContentModels`. Optional.
  */
 export function mapZenMuxModel(
   model: ZenMuxModel,
   providerID: string,
   routing: Record<string, RoutingInfo>,
-  opts: ZenMuxPluginOptions
+  opts: ZenMuxPluginOptions,
+  reasoningContentSlugs?: Set<string>
 ): ModelV2 {
   const routingEntry = routing[model.id]
   const apiId = routingEntry?.provider ? `${model.id}:${routingEntry.provider}` : model.id
@@ -27,6 +31,14 @@ export function mapZenMuxModel(
   const isAnthropic = routingEntry?.sdk === 'anthropic'
   const sdkPackage = isAnthropic ? '@ai-sdk/anthropic' : '@ai-sdk/openai-compatible'
   const apiUrl = isAnthropic ? opts.anthropicBaseURL : opts.baseURL
+
+  // A model needs reasoning_content passthrough when it matches the static list
+  // (substring) or models.dev marks it as interleaved with reasoning_content.
+  const needsReasoningContent =
+    !isAnthropic &&
+    (opts.reasoningContentModels.some((id) => apiId.toLowerCase().includes(id.toLowerCase())) ||
+      reasoningContentSlugs?.has(apiId.toLowerCase()) === true ||
+      reasoningContentSlugs?.has(model.id.toLowerCase()) === true)
 
   const inputMods = model.input_modalities ?? []
   const outputMods = model.output_modalities ?? []
@@ -137,7 +149,7 @@ export function mapZenMuxModel(
         video: outputMods.includes('video'),
         pdf: outputMods.includes('file'),
       },
-      interleaved: false,
+      interleaved: needsReasoningContent ? { field: 'reasoning_content' as const } : false,
     },
     cost,
     limit: {

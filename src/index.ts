@@ -4,6 +4,7 @@ import { DEFAULT_OPTIONS } from './types.js'
 import { loadZenMuxPluginConfig } from './config.js'
 import { loadRoutingTable } from './routing.js'
 import { fetchModels } from './fetch.js'
+import { loadReasoningContentSlugs } from './modelsdev.js'
 import { mapZenMuxModel } from './map.js'
 
 const PROVIDER_ID = 'zenmux'
@@ -54,14 +55,21 @@ export default async function zenmuxPlugin(
     provider: {
       id: PROVIDER_ID,
       models: async () => {
-        const [routing, models] = await Promise.all([
+        const [routing, models, reasoningContentSlugs] = await Promise.all([
           loadRoutingTable(opts, projectDirectory, configFile?.routing),
           fetchModels(opts),
+          loadReasoningContentSlugs(),
         ])
 
         const catalog: Record<string, ModelV2> = {}
         for (const rawModel of models) {
-          const mappedModel = mapZenMuxModel(rawModel, PROVIDER_ID, routing, opts)
+          const mappedModel = mapZenMuxModel(
+            rawModel,
+            PROVIDER_ID,
+            routing,
+            opts,
+            reasoningContentSlugs
+          )
           catalog[mappedModel.id] = mappedModel
         }
 
