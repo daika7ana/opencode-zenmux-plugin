@@ -7,6 +7,11 @@ import type {
 } from './types.js'
 import { readCache, writeCache } from './cache.js'
 
+type FrontendData = Pick<
+  ZenMuxFrontendModel,
+  'max_completion_tokens' | 'description' | 'suitable_api' | 'supported_parameters'
+>
+
 /**
  * Fetch the ZenMux model catalog, enriched with data from the frontend API
  * (max_completion_tokens, suitable_api) cross-referenced by slug ↔ id.
@@ -95,10 +100,6 @@ async function fetchAndEnrich(opts: ZenMuxPluginOptions): Promise<ZenMuxModel[]>
   const models = json.data.filter(hasCriticalFields)
 
   // Enrich with frontend data (best-effort — fails gracefully)
-  type FrontendData = Pick<
-    ZenMuxFrontendModel,
-    'max_completion_tokens' | 'description' | 'suitable_api' | 'supported_parameters'
-  >
   const frontendBySlug = new Map<string, FrontendData>()
 
   if (frontendResponse.status === 'fulfilled' && frontendResponse.value.ok) {
@@ -128,23 +129,12 @@ async function fetchAndEnrich(opts: ZenMuxPluginOptions): Promise<ZenMuxModel[]>
     }
   }
 
-  const enriched =
-    frontendBySlug.size > 0 ? applyFrontendEnrichment(models, frontendBySlug) : models
-
-  return enriched
+  return applyFrontendEnrichment(models, frontendBySlug)
 }
 
 function applyFrontendEnrichment(
   models: ZenMuxModel[],
-  frontendBySlug: Map<
-    string,
-    {
-      max_completion_tokens: number | null
-      description?: string
-      suitable_api?: string
-      supported_parameters?: string
-    }
-  >
+  frontendBySlug: Map<string, FrontendData>
 ): ZenMuxModel[] {
   return models.map((m) => {
     const fe = frontendBySlug.get(m.id)

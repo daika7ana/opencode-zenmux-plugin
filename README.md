@@ -328,6 +328,9 @@ pnpm install
 # Type-check
 pnpm typecheck
 
+# Run tests
+pnpm test
+
 # Build
 pnpm build
 

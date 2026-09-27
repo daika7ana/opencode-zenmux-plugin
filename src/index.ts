@@ -4,8 +4,8 @@ import type {
   PluginCleanup,
   V2PluginContext,
   ZenMuxModel,
-  ZenMuxPluginConfig,
   ZenMuxPluginOptions,
+  ZenMuxRoutingTable,
 } from './types.js'
 import { DEFAULT_OPTIONS } from './types.js'
 import { loadZenMuxPluginConfig } from './config.js'
@@ -20,16 +20,16 @@ const PROVIDER_ID = 'zenmux'
 async function resolveOptions(
   projectDirectory: string,
   rawOpts?: Partial<ZenMuxPluginOptions>
-): Promise<{ opts: ZenMuxPluginOptions; configFile: Partial<ZenMuxPluginConfig> | null }> {
+): Promise<{ opts: ZenMuxPluginOptions; inlineRouting?: ZenMuxRoutingTable }> {
   const configFile = await loadZenMuxPluginConfig(projectDirectory)
   const opts: ZenMuxPluginOptions = { ...DEFAULT_OPTIONS, ...configFile, ...rawOpts }
-  return { opts, configFile }
+  return { opts, inlineRouting: configFile?.routing }
 }
 
 /** V1 entrypoint: OpenCode 1.18.x (`plugin` key and `.opencode/plugin(s)/`). */
 async function server(input: PluginInput, rawOpts?: Partial<ZenMuxPluginOptions>): Promise<Hooks> {
   const projectDirectory = input.directory
-  const { opts, configFile } = await resolveOptions(projectDirectory, rawOpts)
+  const { opts, inlineRouting } = await resolveOptions(projectDirectory, rawOpts)
 
   return {
     async config(config: Config) {
@@ -70,7 +70,7 @@ async function server(input: PluginInput, rawOpts?: Partial<ZenMuxPluginOptions>
       id: PROVIDER_ID,
       models: async () => {
         const [routing, models, reasoningContentSlugs] = await Promise.all([
-          loadRoutingTable(opts, projectDirectory, configFile?.routing),
+          loadRoutingTable(opts, projectDirectory, inlineRouting),
           fetchModels(opts),
           loadReasoningContentSlugs(),
         ])
@@ -99,13 +99,13 @@ async function server(input: PluginInput, rawOpts?: Partial<ZenMuxPluginOptions>
 async function setup(ctx: V2PluginContext): Promise<PluginCleanup> {
   const projectDirectory = ctx.location?.directory ?? process.cwd()
   const rawOpts = ctx.options as Partial<ZenMuxPluginOptions> | undefined
-  const { opts, configFile } = await resolveOptions(projectDirectory, rawOpts)
+  const { opts, inlineRouting } = await resolveOptions(projectDirectory, rawOpts)
 
   const build = async (
     loadModels: () => Promise<ZenMuxModel[] | null>
   ): Promise<ReturnType<typeof mapZenMuxModelInfo>[]> => {
     const [routing, models, reasoningContentSlugs] = await Promise.all([
-      loadRoutingTable(opts, projectDirectory, configFile?.routing),
+      loadRoutingTable(opts, projectDirectory, inlineRouting),
       loadModels(),
       loadReasoningContentSlugs(),
     ])

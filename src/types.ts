@@ -1,17 +1,11 @@
 export interface ZenMuxPricingCondition {
-  unit: string
   gte?: number
-  lt?: number
 }
 
 export interface ZenMuxPricing {
   value: number
-  unit: string
-  currency: string
   conditions?: {
     prompt_tokens?: ZenMuxPricingCondition
-    completion_tokens?: ZenMuxPricingCondition
-    model?: string
   }
 }
 
@@ -27,7 +21,6 @@ export interface ZenMuxPricings {
 export interface ZenMuxFrontendModel {
   slug: string
   max_completion_tokens: number | null
-  context_length?: number
   description?: string
   suitable_api?: string
   supported_parameters?: string
@@ -158,16 +151,10 @@ export interface ModelInfoV2 {
   id: string
   modelID: string
   providerID: string
-  canonical?: string
   family?: string
   name: string
   capabilities: { tools: boolean; input: string[]; output: string[] }
-  variants: Array<{
-    id: string
-    settings?: Record<string, unknown>
-    headers?: Record<string, string>
-    body?: Record<string, unknown>
-  }>
+  variants: Array<{ id: string; settings?: Record<string, unknown> }>
   time: { released: number }
   cost: Array<{
     tier?: { type: 'context'; size: number }
@@ -180,14 +167,8 @@ export interface ModelInfoV2 {
   limit: { context: number; input?: number; output: number }
   settings?: Record<string, unknown>
   headers?: Record<string, string>
-  body?: Record<string, unknown>
   compatibility?: {
     reasoningField?: 'reasoning' | 'reasoning_content' | 'reasoning_text' | string
-    requireReasoning?: boolean
-    maxTokensField?: 'max_completion_tokens' | 'max_tokens'
-    requireFinishReason?: boolean
-    requireAssistantAfterTool?: boolean
-    supportsPromptCacheKey?: boolean
   }
   package?: string
 }
@@ -195,14 +176,11 @@ export interface ModelInfoV2 {
 /** Documented V2 provider shape (@opencode/schema Provider.Info). */
 export interface ProviderInfoV2 {
   id: string
-  canonical?: string
   integrationID?: string
   name: string
   activation: 'auto' | 'enabled' | 'disabled'
   package: string
   settings?: Record<string, unknown>
-  headers?: Record<string, string>
-  body?: Record<string, unknown>
 }
 
 /** Cleanup function optionally returned from a V2 setup() hook. */

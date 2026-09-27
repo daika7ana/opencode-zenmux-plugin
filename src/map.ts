@@ -28,10 +28,6 @@ interface ResolvedModel {
   reasoning: boolean
   input: ModalityFlags
   output: ModalityFlags
-  promptPricing: TieredPrice
-  completionPricing: TieredPrice
-  cacheReadPricing: TieredPrice
-  cacheWritePricing: TieredPrice
   cost: ModelV2['cost']
   contextLength: number
   outputLimit: number
@@ -42,7 +38,7 @@ interface ResolvedModel {
 // ZenMux prices are already USD per 1M tokens, which matches the unit
 // OpenCode expects for ModelV2 cost fields.
 //
-// Some models have tiered pricing via conditions.prompt_tokens (gte/lt).
+// Some models have tiered pricing via conditions.prompt_tokens (gte).
 // We surface the lowest tier as the base cost and the highest tier as
 // experimentalOver200K when there are 2+ tiers.
 function extractPricing(arr: ZenMuxPricing[] | undefined): TieredPrice {
@@ -59,11 +55,9 @@ function extractPricing(arr: ZenMuxPricing[] | undefined): TieredPrice {
     return aGte - bGte
   })
 
-  if (sorted.length === 1) return { base: sorted[0].value }
-
   return {
     base: sorted[0].value,
-    extended: sorted[sorted.length - 1].value,
+    extended: sorted.length > 1 ? sorted[sorted.length - 1].value : undefined,
   }
 }
 
@@ -192,10 +186,6 @@ function resolveZenMuxModel(
     reasoning,
     input,
     output,
-    promptPricing,
-    completionPricing,
-    cacheReadPricing,
-    cacheWritePricing,
     cost,
     contextLength,
     outputLimit,

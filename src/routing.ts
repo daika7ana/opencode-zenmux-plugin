@@ -1,7 +1,6 @@
-import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import stripJsonComments from 'strip-json-comments'
+import { readJsonc } from './jsonc.js'
 import type { RoutingInfo, ZenMuxPluginOptions, ZenMuxRoutingTable } from './types.js'
 
 const ROUTING_FILE_NAMES = [
@@ -16,25 +15,14 @@ const ROUTING_FILE_NAMES = [
  *
  * Supports both JSON and JSONC (JSON with comments).
  *
- * Recognized file names: zenmux-providers.json(c) and zenmux-routing.json(c).
- *
  * Search order:
  * 1. opts.routingFile (explicit path, if provided)
- * 2. {projectDirectory}/zenmux-providers.jsonc
- * 3. {projectDirectory}/zenmux-providers.json
- * 4. {projectDirectory}/zenmux-routing.jsonc
- * 5. {projectDirectory}/zenmux-routing.json
- * 6. {projectDirectory}/.opencode/zenmux-providers.jsonc
- * 7. {projectDirectory}/.opencode/zenmux-providers.json
- * 8. {projectDirectory}/.opencode/zenmux-routing.jsonc
- * 9. {projectDirectory}/.opencode/zenmux-routing.json
- * 10. ~/.config/opencode/zenmux-providers.jsonc
- * 11. ~/.config/opencode/zenmux-providers.json
- * 12. ~/.config/opencode/zenmux-routing.jsonc
- * 13. ~/.config/opencode/zenmux-routing.json
+ * 2. Inline `routing` from zenmux-plugin.json
+ * 3. {projectDirectory}/<name>
+ * 4. {projectDirectory}/.opencode/<name>
+ * 5. ~/.config/opencode/<name>
  *
- * Returns a Record<modelId, RoutingInfo>.
- * If no file is found, returns an empty record.
+ * Returns a Record<modelId, RoutingInfo>; empty when no file is found.
  */
 export async function loadRoutingTable(
   opts: ZenMuxPluginOptions,
@@ -43,9 +31,8 @@ export async function loadRoutingTable(
 ): Promise<Record<string, RoutingInfo>> {
   // 1. Explicit routingFile option takes precedence
   if (opts.routingFile) {
-    const parsed = await tryReadRoutingFile(opts.routingFile)
-    if (parsed !== null) return normalizeRoutingTable(parsed)
-    return {}
+    const parsed = await readJsonc<ZenMuxRoutingTable>(opts.routingFile)
+    return parsed !== null ? normalizeRoutingTable(parsed) : {}
   }
 
   // 2. Inline routing from zenmux-plugin.json
@@ -54,39 +41,19 @@ export async function loadRoutingTable(
   }
 
   // 3. Default routing file search
-  const paths = [
-    ...pathsInDirectory(projectDirectory),
-    ...pathsInDirectory(join(projectDirectory, '.opencode')),
-    ...pathsInDirectory(join(homedir(), '.config', 'opencode')),
+  const directories = [
+    projectDirectory,
+    join(projectDirectory, '.opencode'),
+    join(homedir(), '.config', 'opencode'),
   ]
-
-  for (const path of paths) {
-    const parsed = await tryReadRoutingFile(path)
-    if (parsed !== null) return normalizeRoutingTable(parsed)
+  for (const directory of directories) {
+    for (const name of ROUTING_FILE_NAMES) {
+      const parsed = await readJsonc<ZenMuxRoutingTable>(join(directory, name))
+      if (parsed !== null) return normalizeRoutingTable(parsed)
+    }
   }
 
   return {}
-}
-
-function pathsInDirectory(directory: string): string[] {
-  return ROUTING_FILE_NAMES.map((name) => join(directory, name))
-}
-
-async function tryReadRoutingFile(path: string): Promise<ZenMuxRoutingTable | null> {
-  try {
-    const raw = await readFile(path, 'utf-8')
-    return JSON.parse(stripJsonComments(raw)) as ZenMuxRoutingTable
-  } catch (err: unknown) {
-    // File not found → skip
-    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return null
-    }
-    // JSON parse error → rethrow with clear message
-    if (err instanceof SyntaxError) {
-      throw new Error(`Failed to parse routing file at ${path}: ${err.message}`, { cause: err })
-    }
-    throw err
-  }
 }
 
 function normalizeRoutingTable(table: ZenMuxRoutingTable): Record<string, RoutingInfo> {

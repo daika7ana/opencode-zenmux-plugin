@@ -1,10 +1,28 @@
 {
   "name": "@daika7ana/opencode-zenmux-plugin",
-  "version": "0.4.0",
+  "version": "0.4.1",
+  "description": "OpenCode plugin that registers the ZenMux provider and serves its live model catalog.",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "zenmux",
+    "provider",
+    "model-catalog"
+  ],
+  "homepage": "https://github.com/daika7ana/opencode-zenmux-plugin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/daika7ana/opencode-zenmux-plugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/daika7ana/opencode-zenmux-plugin/issues"
+  },
+  "author": "daika7ana",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write .",
@@ -17,6 +35,7 @@
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.9",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.70.1"
   },
