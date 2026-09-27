@@ -152,3 +152,92 @@ export interface ModelV2 {
   release_date: string
   variants?: Record<string, Record<string, unknown>>
 }
+
+/** Documented V2 model shape (@opencode/schema Model.Info), for the provider/model plugin API. */
+export interface ModelInfoV2 {
+  id: string
+  modelID: string
+  providerID: string
+  canonical?: string
+  family?: string
+  name: string
+  capabilities: { tools: boolean; input: string[]; output: string[] }
+  variants: Array<{
+    id: string
+    settings?: Record<string, unknown>
+    headers?: Record<string, string>
+    body?: Record<string, unknown>
+  }>
+  time: { released: number }
+  cost: Array<{
+    tier?: { type: 'context'; size: number }
+    input: number
+    output: number
+    cache: { read: number; write: number }
+  }>
+  status: 'alpha' | 'beta' | 'deprecated' | 'active'
+  enabled: boolean
+  limit: { context: number; input?: number; output: number }
+  settings?: Record<string, unknown>
+  headers?: Record<string, string>
+  body?: Record<string, unknown>
+  compatibility?: {
+    reasoningField?: 'reasoning' | 'reasoning_content' | 'reasoning_text' | string
+    requireReasoning?: boolean
+    maxTokensField?: 'max_completion_tokens' | 'max_tokens'
+    requireFinishReason?: boolean
+    requireAssistantAfterTool?: boolean
+    supportsPromptCacheKey?: boolean
+  }
+  package?: string
+}
+
+/** Documented V2 provider shape (@opencode/schema Provider.Info). */
+export interface ProviderInfoV2 {
+  id: string
+  canonical?: string
+  integrationID?: string
+  name: string
+  activation: 'auto' | 'enabled' | 'disabled'
+  package: string
+  settings?: Record<string, unknown>
+  headers?: Record<string, string>
+  body?: Record<string, unknown>
+}
+
+/** Cleanup function optionally returned from a V2 setup() hook. */
+export type PluginCleanup = () => Promise<void> | void
+
+/** A registration returned by a V2 domain transform. */
+export interface V2Registration {
+  dispose(): Promise<void>
+}
+
+/** Minimal structural mirror of the 2.x provider editor (we only contribute). */
+export interface V2ProviderEditor {
+  add(input: { info: ProviderInfoV2; models: ModelInfoV2[] }): void
+}
+
+/** Minimal structural mirror of the 2.x integration editor (we only add methods). */
+export interface V2IntegrationEditor {
+  method: {
+    update(input: {
+      integrationID: string
+      method: { type: 'key'; label?: string } | { type: 'env'; names: string[] }
+    }): void
+  }
+}
+
+/** Minimal structural mirror of the 2.x plugin context. All domains optional so a
+ *  runtime that lacks them degrades to a no-op instead of throwing. */
+export interface V2PluginContext {
+  options?: Record<string, unknown>
+  location?: { directory?: string }
+  provider?: {
+    transform(callback: (editor: V2ProviderEditor) => void): Promise<V2Registration>
+    reload(): Promise<void>
+  }
+  integration?: {
+    transform(callback: (editor: V2IntegrationEditor) => void): Promise<V2Registration>
+  }
+}

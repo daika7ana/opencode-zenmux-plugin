@@ -105,6 +105,27 @@ opencode models --refresh
 
 </details>
 
+### OpenCode V2
+
+The plugin is a **dual V1/V2 plugin**: its default export is `{ id, setup, server }`. OpenCode 1.18.x calls `server()`; OpenCode 2.x calls `setup()`. One install covers both — no separate package.
+
+Under V2, declare the plugin with the plural `plugins` key and an object entry rather than the V1 tuple:
+
+```json
+{
+  "plugins": [
+    {
+      "package": "@daika7ana/opencode-zenmux-plugin",
+      "options": { "baseURL": "https://zenmux.ai/api/v1" }
+    }
+  ]
+}
+```
+
+Options behave exactly as in the V1 tuple form. V2 registers the provider and models through the provider/model plugin API — including per-model `package` and `settings.baseURL` so models routed with `sdk: "anthropic"` keep using `anthropicBaseURL` — and registers the API key as both an `env` method (`ZENMUX_API_KEY`) and a stored-key method.
+
+> **Status:** V2 plugins are supported by the `@opencode/cli` 2.x line (the binary it installs is named `opencode2`, e.g. `2.0.12`), which reads the plural `plugins` key and calls `setup()`. The V1 line (`opencode-ai`, up to `1.18.31`) reads only the singular `plugin` key — its config schema has no `plugins` entry, so it silently ignores one. Both entrypoints are implemented, and each CLI picks the matching one.
+
 ## Configuration
 
 The plugin uses two types of files:
@@ -325,11 +346,13 @@ pnpm format:check
 
 ## How it works
 
-The plugin exports a default OpenCode plugin function that registers three hooks:
+The plugin default-exports a dual entrypoint, an object `{ id, setup, server }`. OpenCode 1.18.x calls `server()`, which registers three hooks:
 
 1. **`config`** — registers the `zenmux` provider with `@ai-sdk/openai-compatible` and the configured `baseURL`.
 2. **`auth`** — adds an API key auth method for `/connect zenmux`.
 3. **`provider.models`** — fetches the live ZenMux catalog, loads the routing table, maps records to OpenCode's `ModelV2` shape, and applies routing. Models with `sdk: "anthropic"` in the routing table use `@ai-sdk/anthropic` and point to `anthropicBaseURL`.
+
+OpenCode 2.x calls `setup(ctx)` instead, which registers the same provider and models through the V2 provider/model plugin API. It registers from the on-disk catalog cache first — the host awaits `setup()` only briefly, and V2 transforms must stay synchronous — then fetches the live catalog in the background, replays the transform via `provider.reload()`, and repeats on the `catalogCacheTTL` interval. It also registers the API key as an integration method.
 
 The public models endpoint does not require authentication. The API key is only used by the actual provider for chat/completion requests.
 
