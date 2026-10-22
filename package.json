@@ -1,6 +1,6 @@
 {
   "name": "@daika7ana/opencode-zenmux-plugin",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "OpenCode plugin that registers the ZenMux provider and serves its live model catalog.",
   "keywords": [
     "opencode",
@@ -21,6 +21,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "lint": "eslint src",

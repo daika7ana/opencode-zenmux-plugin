@@ -1,9 +1,15 @@
 export interface ZenMuxPricingCondition {
-  gte?: number
+  gte?: number | string
+  gt?: number | string
+  /** Threshold unit; the live API uses "kTokens". Missing means tokens. */
+  unit?: string
 }
 
 export interface ZenMuxPricing {
   value: number
+  /** "perMTokens" on the live API: values are already USD per 1M tokens. */
+  unit?: string
+  currency?: string
   conditions?: {
     prompt_tokens?: ZenMuxPricingCondition
   }
@@ -21,7 +27,6 @@ export interface ZenMuxPricings {
 export interface ZenMuxFrontendModel {
   slug: string
   max_completion_tokens: number | null
-  description?: string
   suitable_api?: string
   supported_parameters?: string
 }
@@ -70,6 +75,14 @@ export interface ZenMuxPluginOptions {
    */
   catalogCacheTTL: number
   /**
+   * Which price to use when ZenMux returns several prices for the same token
+   * threshold (time-of-day, cache-type or output-length variants that OpenCode
+   * cannot represent). `lowest` matches the models.dev catalog; `highest`
+   * reports the most conservative (list/peak) price.
+   * Default: 'lowest'
+   */
+  pricingTieBreak: 'lowest' | 'highest'
+  /**
    * Model ids (substring match) whose responses use `reasoning_content` and must
    * pass it back to the API on subsequent turns. Enables OpenCode's
    * `interleaved: { field: 'reasoning_content' }` capability for these models.
@@ -90,6 +103,7 @@ export const DEFAULT_OPTIONS: ZenMuxPluginOptions = {
   excludeNonChat: true,
   routedModelIds: false,
   catalogCacheTTL: 60,
+  pricingTieBreak: 'lowest',
   reasoningContentModels: ['deepseek', 'glm', 'minimax', 'kimi', 'mimo'],
 }
 
@@ -136,7 +150,12 @@ export interface ModelV2 {
     input: number
     output: number
     cache: { read: number; write: number }
-    experimentalOver200K?: { input: number; output: number; cache: { read: number; write: number } }
+    tiers?: Array<{
+      input: number
+      output: number
+      cache: { read: number; write: number }
+      tier: { type: 'context'; size: number }
+    }>
   }
   limit: { context: number; input?: number; output: number }
   status: 'alpha' | 'beta' | 'deprecated' | 'active'

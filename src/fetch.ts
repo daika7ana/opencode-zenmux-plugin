@@ -9,8 +9,10 @@ import { readCache, writeCache } from './cache.js'
 
 type FrontendData = Pick<
   ZenMuxFrontendModel,
-  'max_completion_tokens' | 'description' | 'suitable_api' | 'supported_parameters'
+  'max_completion_tokens' | 'suitable_api' | 'supported_parameters'
 >
+
+const REQUEST_TIMEOUT_MS = 30_000
 
 /**
  * Fetch the ZenMux model catalog, enriched with data from the frontend API
@@ -24,20 +26,29 @@ type FrontendData = Pick<
  * output_modalities.includes("text") when frontend data is unavailable.
  */
 export async function fetchModels(opts: ZenMuxPluginOptions): Promise<ZenMuxModel[]> {
-  const ttlMs = opts.catalogCacheTTL * 60_000
+  const ttlMs = Number(opts.catalogCacheTTL) * 60_000
+  const cacheEnabled = Number.isFinite(ttlMs) && ttlMs > 0
   const cacheName = cacheFileName(opts)
   const forceRefresh = isRefreshInvocation()
 
-  if (!forceRefresh && ttlMs > 0) {
+  if (!forceRefresh && cacheEnabled) {
     const cached = await readCache<ZenMuxModel[]>(cacheName, ttlMs)
     if (cached) {
       return opts.excludeNonChat ? cached.filter(isChatModel) : cached
     }
   }
 
-  const enriched = await fetchAndEnrich(opts)
+  let enriched: ZenMuxModel[]
+  try {
+    enriched = await fetchAndEnrich(opts)
+  } catch (err) {
+    // A stale catalog beats no catalog: serve the last good snapshot if we have one.
+    const stale = await readCachedModels(opts)
+    if (stale) return stale
+    throw err
+  }
 
-  if (ttlMs > 0) {
+  if (cacheEnabled) {
     await writeCache(cacheName, enriched)
   }
 
@@ -78,8 +89,8 @@ function cacheFileName(opts: ZenMuxPluginOptions): string {
 
 async function fetchAndEnrich(opts: ZenMuxPluginOptions): Promise<ZenMuxModel[]> {
   const [modelsResponse, frontendResponse] = await Promise.allSettled([
-    globalThis.fetch(opts.modelsURL),
-    globalThis.fetch(opts.frontendURL),
+    globalThis.fetch(opts.modelsURL, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
+    globalThis.fetch(opts.frontendURL, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }),
   ])
 
   if (modelsResponse.status === 'rejected') {
@@ -117,7 +128,6 @@ async function fetchAndEnrich(opts: ZenMuxPluginOptions): Promise<ZenMuxModel[]>
           if (typeof fe.slug === 'string') {
             frontendBySlug.set(fe.slug, {
               max_completion_tokens: fe.max_completion_tokens,
-              description: fe.description,
               suitable_api: fe.suitable_api,
               supported_parameters: fe.supported_parameters,
             })
@@ -144,7 +154,6 @@ function applyFrontendEnrichment(
       _frontend: {
         slug: m.id,
         max_completion_tokens: fe.max_completion_tokens,
-        description: fe.description,
         suitable_api: fe.suitable_api,
         supported_parameters: fe.supported_parameters,
       },

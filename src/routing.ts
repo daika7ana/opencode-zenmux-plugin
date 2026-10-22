@@ -1,6 +1,6 @@
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readJsonc } from './jsonc.js'
+import { searchDirectories } from './config.js'
 import type { RoutingInfo, ZenMuxPluginOptions, ZenMuxRoutingTable } from './types.js'
 
 const ROUTING_FILE_NAMES = [
@@ -41,12 +41,7 @@ export async function loadRoutingTable(
   }
 
   // 3. Default routing file search
-  const directories = [
-    projectDirectory,
-    join(projectDirectory, '.opencode'),
-    join(homedir(), '.config', 'opencode'),
-  ]
-  for (const directory of directories) {
+  for (const directory of searchDirectories(projectDirectory)) {
     for (const name of ROUTING_FILE_NAMES) {
       const parsed = await readJsonc<ZenMuxRoutingTable>(join(directory, name))
       if (parsed !== null) return normalizeRoutingTable(parsed)

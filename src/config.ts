@@ -5,6 +5,15 @@ import type { ZenMuxPluginConfig } from './types.js'
 
 const CONFIG_FILE_NAMES = ['zenmux-plugin.jsonc', 'zenmux-plugin.json']
 
+/** Config/routing search roots, most specific first. */
+export function searchDirectories(projectDirectory: string): string[] {
+  return [
+    projectDirectory,
+    join(projectDirectory, '.opencode'),
+    join(homedir(), '.config', 'opencode'),
+  ]
+}
+
 /**
  * Load the unified ZenMux plugin config file.
  *
@@ -18,13 +27,7 @@ const CONFIG_FILE_NAMES = ['zenmux-plugin.jsonc', 'zenmux-plugin.json']
 export async function loadZenMuxPluginConfig(
   projectDirectory: string
 ): Promise<Partial<ZenMuxPluginConfig> | null> {
-  const directories = [
-    projectDirectory,
-    join(projectDirectory, '.opencode'),
-    join(homedir(), '.config', 'opencode'),
-  ]
-
-  for (const directory of directories) {
+  for (const directory of searchDirectories(projectDirectory)) {
     for (const name of CONFIG_FILE_NAMES) {
       const parsed = await readJsonc<Partial<ZenMuxPluginConfig>>(join(directory, name))
       if (parsed !== null) return parsed

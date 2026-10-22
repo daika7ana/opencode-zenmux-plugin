@@ -1,27 +1,15 @@
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * Best-effort cross-platform path to OpenCode's cache directory.
- *
- * OpenCode stores its caches at `<Global.Path.cache>`. The standard platform
- * mappings are:
- *   - Linux:   $XDG_CACHE_HOME/opencode  (~/.cache/opencode)
- *   - macOS:   ~/Library/Caches/opencode
- *   - Windows: %LOCALAPPDATA%/opencode/Cache
+ * Path to OpenCode's cache directory. OpenCode uses xdg-basedir on every
+ * platform, so this is `$XDG_CACHE_HOME/opencode` (default `~/.cache/opencode`)
+ * on macOS and Windows too.
  */
 export function opencodeCacheDir(): string {
-  const home = homedir()
-
-  switch (process.platform) {
-    case 'darwin':
-      return join(home, 'Library', 'Caches', 'opencode')
-    case 'win32':
-      return join(process.env.LOCALAPPDATA || home, 'opencode', 'Cache')
-    default:
-      return join(process.env.XDG_CACHE_HOME || join(home, '.cache'), 'opencode')
-  }
+  return join(process.env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'opencode')
 }
 
 interface CacheFile<T> {
@@ -53,7 +41,8 @@ export async function writeCache(name: string, value: unknown): Promise<void> {
   try {
     const dir = opencodeCacheDir()
     const file = join(dir, name)
-    const tmp = `${file}.${process.pid}.tmp`
+    const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`
+    await mkdir(dir, { recursive: true })
     await writeFile(tmp, JSON.stringify({ fetchedAt: Date.now(), value }))
     await rename(tmp, file)
   } catch {

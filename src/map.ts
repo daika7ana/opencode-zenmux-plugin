@@ -7,7 +7,7 @@ import type {
   ZenMuxPricing,
 } from './types.js'
 
-type TieredPrice = { base: number; extended?: number }
+type PriceEntry = { size: number; value: number }
 
 interface ModalityFlags {
   text: boolean
@@ -26,6 +26,7 @@ interface ResolvedModel {
   apiUrl: string
   needsReasoningContent: boolean
   reasoning: boolean
+  tools: boolean
   input: ModalityFlags
   output: ModalityFlags
   cost: ModelV2['cost']
@@ -36,36 +37,62 @@ interface ResolvedModel {
 }
 
 // ZenMux prices are already USD per 1M tokens, which matches the unit
-// OpenCode expects for ModelV2 cost fields.
+// OpenCode expects. Tier thresholds arrive as `{ unit: 'kTokens', gte|gt }`
+// and are converted to tokens; an entry without a condition is the base price.
 //
-// Some models have tiered pricing via conditions.prompt_tokens (gte).
-// We surface the lowest tier as the base cost and the highest tier as
-// experimentalOver200K when there are 2+ tiers.
-function extractPricing(arr: ZenMuxPricing[] | undefined): TieredPrice {
-  if (!arr || arr.length === 0) return { base: 0 }
+// The models API flattens time-of-day, cache-type and output-length pricing into
+// duplicate thresholds. OpenCode has no dimension for those, so `pricingTieBreak`
+// decides: `lowest` (the models.dev catalog) or `highest` (list/peak price).
+type TieBreak = ZenMuxPluginOptions['pricingTieBreak']
 
-  const hasTiers = arr.some((p) => p.conditions?.prompt_tokens)
-  if (!hasTiers) {
-    return { base: arr[0].value }
-  }
-
-  const sorted = [...arr].sort((a, b) => {
-    const aGte = a.conditions?.prompt_tokens?.gte ?? 0
-    const bGte = b.conditions?.prompt_tokens?.gte ?? 0
-    return aGte - bGte
+function priceEntries(arr: ZenMuxPricing[] | undefined): PriceEntry[] {
+  return (arr ?? []).map((p) => {
+    const condition = p.conditions?.prompt_tokens
+    const raw = condition?.gte ?? condition?.gt
+    const threshold = Number(raw)
+    const size =
+      raw === undefined || !Number.isFinite(threshold)
+        ? 0
+        : condition?.unit === 'kTokens'
+          ? threshold * 1000
+          : threshold
+    return { size, value: p.value }
   })
+}
 
-  return {
-    base: sorted[0].value,
-    extended: sorted.length > 1 ? sorted[sorted.length - 1].value : undefined,
+function priceAtThreshold(
+  entries: PriceEntry[],
+  size: number,
+  tieBreak: TieBreak
+): number | undefined {
+  let best: PriceEntry | undefined
+  for (const entry of entries) {
+    if (entry.size > size) continue
+    if (
+      !best ||
+      entry.size > best.size ||
+      (entry.size === best.size &&
+        (tieBreak === 'highest' ? entry.value > best.value : entry.value < best.value))
+    )
+      best = entry
   }
+  return best?.value
+}
+
+function basePrice(entries: PriceEntry[], tieBreak: TieBreak): number {
+  if (entries.length === 0) return 0
+  const minSize = Math.min(...entries.map((e) => e.size))
+  return priceAtThreshold(entries, minSize, tieBreak) ?? 0
+}
+
+function priceAt(entries: PriceEntry[], size: number, tieBreak: TieBreak): number {
+  return priceAtThreshold(entries, size, tieBreak) ?? basePrice(entries, tieBreak)
 }
 
 /**
  * Compute the shared intermediate for a single ZenMux model record.
  *
  * @param model - The raw ZenMux model from the API.
- * @param providerID - The OpenCode provider id ("zenmux").
  * @param routing - The loaded routing table (modelId → RoutingInfo).
  * @param opts - Plugin options.
  * @param reasoningContentSlugs - Model ids (lowercased) that models.dev marks as
@@ -74,7 +101,6 @@ function extractPricing(arr: ZenMuxPricing[] | undefined): TieredPrice {
  */
 function resolveZenMuxModel(
   model: ZenMuxModel,
-  providerID: string,
   routing: Record<string, RoutingInfo>,
   opts: ZenMuxPluginOptions,
   reasoningContentSlugs?: Set<string>
@@ -115,39 +141,44 @@ function resolveZenMuxModel(
     pdf: outputMods.includes('file'),
   }
 
-  const promptPricing = extractPricing(model.pricings?.prompt)
-  const completionPricing = extractPricing(model.pricings?.completion)
-  const cacheReadPricing = extractPricing(model.pricings?.input_cache_read)
-  const cacheWritePricing = extractPricing(
+  const tieBreak: TieBreak = opts.pricingTieBreak === 'highest' ? 'highest' : 'lowest'
+  const promptPricing = priceEntries(model.pricings?.prompt)
+  const completionPricing = priceEntries(model.pricings?.completion)
+  const cacheReadPricing = priceEntries(model.pricings?.input_cache_read)
+  const cacheWritePricing = priceEntries(
     model.pricings?.input_cache_write && model.pricings.input_cache_write.length > 0
       ? model.pricings.input_cache_write
       : model.pricings?.input_cache_write_1_h
   )
 
   const cost: ModelV2['cost'] = {
-    input: promptPricing.base,
-    output: completionPricing.base,
+    input: basePrice(promptPricing, tieBreak),
+    output: basePrice(completionPricing, tieBreak),
     cache: {
-      read: cacheReadPricing.base,
-      write: cacheWritePricing.base,
+      read: basePrice(cacheReadPricing, tieBreak),
+      write: basePrice(cacheWritePricing, tieBreak),
     },
   }
 
-  const hasExtendedTier = [
-    promptPricing,
-    completionPricing,
-    cacheReadPricing,
-    cacheWritePricing,
-  ].some((p) => p.extended !== undefined)
-  if (hasExtendedTier) {
-    cost.experimentalOver200K = {
-      input: promptPricing.extended ?? promptPricing.base,
-      output: completionPricing.extended ?? completionPricing.base,
+  // One tier per threshold, with every price field resolved at that size.
+  const thresholds = [
+    ...new Set(
+      [promptPricing, completionPricing, cacheReadPricing, cacheWritePricing]
+        .flat()
+        .map((e) => e.size)
+        .filter((size) => size > 0)
+    ),
+  ].sort((a, b) => a - b)
+  if (thresholds.length > 0) {
+    cost.tiers = thresholds.map((size) => ({
+      input: priceAt(promptPricing, size, tieBreak),
+      output: priceAt(completionPricing, size, tieBreak),
       cache: {
-        read: cacheReadPricing.extended ?? cacheReadPricing.base,
-        write: cacheWritePricing.extended ?? cacheWritePricing.base,
+        read: priceAt(cacheReadPricing, size, tieBreak),
+        write: priceAt(cacheWritePricing, size, tieBreak),
       },
-    }
+      tier: { type: 'context' as const, size },
+    }))
   }
 
   // Limits: prefer max_completion_tokens from the frontend API enrichment.
@@ -176,6 +207,10 @@ function resolveZenMuxModel(
         }
     : {}
 
+  // Trust a declared parameter list; models with an empty one fall back to text output.
+  const supportedParameters = model._frontend?.supported_parameters
+  const tools = supportedParameters ? supportedParameters.includes('tools') : output.text
+
   return {
     apiId,
     modelId,
@@ -184,6 +219,7 @@ function resolveZenMuxModel(
     apiUrl,
     needsReasoningContent,
     reasoning,
+    tools,
     input,
     output,
     cost,
@@ -212,7 +248,7 @@ export function mapZenMuxModel(
   opts: ZenMuxPluginOptions,
   reasoningContentSlugs?: Set<string>
 ): ModelV2 {
-  const r = resolveZenMuxModel(model, providerID, routing, opts, reasoningContentSlugs)
+  const r = resolveZenMuxModel(model, routing, opts, reasoningContentSlugs)
 
   return {
     id: r.modelId,
@@ -228,7 +264,7 @@ export function mapZenMuxModel(
       temperature: true,
       reasoning: r.reasoning,
       attachment: r.input.image || r.input.pdf,
-      toolcall: model._frontend?.supported_parameters?.includes('tools') ? true : r.output.text,
+      toolcall: r.tools,
       input: {
         text: r.input.text,
         audio: r.input.audio,
@@ -286,7 +322,7 @@ export function mapZenMuxModelInfo(
   opts: ZenMuxPluginOptions,
   reasoningContentSlugs?: Set<string>
 ): ModelInfoV2 {
-  const r = resolveZenMuxModel(model, providerID, routing, opts, reasoningContentSlugs)
+  const r = resolveZenMuxModel(model, routing, opts, reasoningContentSlugs)
 
   const cost: ModelInfoV2['cost'] = [
     {
@@ -294,16 +330,8 @@ export function mapZenMuxModelInfo(
       output: r.cost.output,
       cache: { read: r.cost.cache.read, write: r.cost.cache.write },
     },
+    ...(r.cost.tiers ?? []),
   ]
-  if (r.cost.experimentalOver200K) {
-    const ext = r.cost.experimentalOver200K
-    cost.push({
-      tier: { type: 'context', size: 200000 },
-      input: ext.input,
-      output: ext.output,
-      cache: { read: ext.cache.read, write: ext.cache.write },
-    })
-  }
 
   const parsed = model.publish_time ? Date.parse(model.publish_time) : NaN
   const released = Number.isNaN(parsed) ? 0 : Math.floor(parsed / 1000)
@@ -315,7 +343,7 @@ export function mapZenMuxModelInfo(
     family: model.owned_by,
     name: model.display_name ?? model.id,
     capabilities: {
-      tools: model._frontend?.supported_parameters?.includes('tools') ? true : r.output.text,
+      tools: r.tools,
       input: modalityArray(r.input),
       output: modalityArray(r.output),
     },

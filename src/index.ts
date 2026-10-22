@@ -34,36 +34,22 @@ async function server(input: PluginInput, rawOpts?: Partial<ZenMuxPluginOptions>
   return {
     async config(config: Config) {
       config.provider = config.provider ?? {}
+      const existing = config.provider[PROVIDER_ID]
       config.provider[PROVIDER_ID] = {
+        ...existing,
         name: 'ZenMux',
         npm: '@ai-sdk/openai-compatible',
-        options: { baseURL: opts.baseURL },
+        options: { ...existing?.options, baseURL: opts.baseURL },
         env: ['ZENMUX_API_KEY'],
         models: {},
       }
     },
 
+    // No prompts/authorize: OpenCode's built-in API-key flow prompts and saves
+    // the key. Supplying our own prompts makes the CLI ask twice.
     auth: {
       provider: PROVIDER_ID,
-      methods: [
-        {
-          type: 'api',
-          label: 'API Key',
-          prompts: [
-            {
-              type: 'text',
-              key: 'api_key',
-              message: 'Enter your ZenMux API key:',
-              placeholder: 'zm-...',
-            },
-          ],
-          async authorize(inputs) {
-            const key = inputs?.api_key
-            if (!key) return { type: 'failed' }
-            return { type: 'success', key }
-          },
-        },
-      ],
+      methods: [{ type: 'api', label: 'API Key' }],
     } satisfies AuthHook,
 
     provider: {
@@ -160,10 +146,11 @@ async function setup(ctx: V2PluginContext): Promise<PluginCleanup> {
   }
 
   kick()
-  const intervalMs = opts.catalogCacheTTL * 60_000
-  if (intervalMs <= 0) return () => {}
+  const intervalMs = Number(opts.catalogCacheTTL) * 60_000
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) return () => {}
 
   const timer = setInterval(kick, intervalMs)
+  timer.unref()
   return () => clearInterval(timer)
 }
 

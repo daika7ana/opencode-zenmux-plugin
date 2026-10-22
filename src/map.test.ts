@@ -25,12 +25,23 @@ function model(overrides: Partial<ZenMuxModel> = {}): ZenMuxModel {
   }
 }
 
-/** Build a pricing array from plain numbers or `{ value, gte }` tiers. */
-function pricing(values: Array<number | { value: number; gte: number }>) {
+/** Build a pricing array in the live API shape (kTokens thresholds, string values). */
+function pricing(values: Array<number | { value: number; gte?: string; gt?: string }>) {
   return values.map((v) =>
     typeof v === 'number'
       ? { value: v }
-      : { value: v.value, conditions: { prompt_tokens: { gte: v.gte } } }
+      : {
+          value: v.value,
+          unit: 'perMTokens',
+          currency: 'USD',
+          conditions: {
+            prompt_tokens: {
+              unit: 'kTokens',
+              ...(v.gte !== undefined ? { gte: v.gte } : {}),
+              ...(v.gt !== undefined ? { gt: v.gt } : {}),
+            },
+          },
+        }
   )
 }
 
@@ -52,16 +63,16 @@ describe('pricing', () => {
     assert.deepEqual(v2.cost[0], { input: 3, output: 15, cache: { read: 0.3, write: 1.5 } })
   })
 
-  it('sorts tiers and surfaces the highest as experimentalOver200K', () => {
+  it('maps kTokens thresholds into V1 cost tiers and V2 tiers', () => {
     const m = model({
       pricings: {
         prompt: pricing([
-          { value: 4, gte: 200000 },
-          { value: 1, gte: 0 },
+          { value: 4, gte: '100' },
+          { value: 1, gte: '0' },
         ]),
         completion: pricing([
-          { value: 8, gte: 200000 },
-          { value: 2, gte: 0 },
+          { value: 8, gte: '100' },
+          { value: 2, gte: '0' },
         ]),
         input_cache_read: [{ value: 0.1 }],
         input_cache_write: [{ value: 0.2 }],
@@ -70,33 +81,133 @@ describe('pricing', () => {
     const v1 = mapZenMuxModel(m, PROVIDER_ID, {}, opts())
     assert.equal(v1.cost.input, 1)
     assert.equal(v1.cost.output, 2)
-    assert.deepEqual(v1.cost.experimentalOver200K, {
-      input: 4,
-      output: 8,
-      cache: { read: 0.1, write: 0.2 },
-    })
+    assert.deepEqual(v1.cost.tiers, [
+      {
+        input: 4,
+        output: 8,
+        cache: { read: 0.1, write: 0.2 },
+        tier: { type: 'context', size: 100000 },
+      },
+    ])
 
     const v2 = mapZenMuxModelInfo(m, PROVIDER_ID, {}, opts())
     assert.equal(v2.cost.length, 2)
     assert.deepEqual(v2.cost[1], {
-      tier: { type: 'context', size: 200000 },
+      tier: { type: 'context', size: 100000 },
       input: 4,
       output: 8,
       cache: { read: 0.1, write: 0.2 },
     })
   })
 
-  it('does not create an extended tier from a single tiered entry', () => {
+  it('keeps a single tiered entry as a tier', () => {
     const m = model({
       pricings: {
-        prompt: pricing([{ value: 2, gte: 100000 }]),
+        prompt: pricing([{ value: 2, gte: '100' }]),
         completion: [{ value: 6 }],
         input_cache_read: [{ value: 0 }],
       },
     })
     const v1 = mapZenMuxModel(m, PROVIDER_ID, {}, opts())
     assert.equal(v1.cost.input, 2)
-    assert.equal(v1.cost.experimentalOver200K, undefined)
+    assert.deepEqual(v1.cost.tiers, [
+      {
+        input: 2,
+        output: 6,
+        cache: { read: 0, write: 0 },
+        tier: { type: 'context', size: 100000 },
+      },
+    ])
+  })
+
+  it('keeps every tier, including prices below 200K', () => {
+    const m = model({
+      pricings: {
+        prompt: pricing([
+          { value: 0.03, gte: '0' },
+          { value: 0.06, gte: '32' },
+          { value: 0.12, gte: '128' },
+        ]),
+        completion: [{ value: 1 }],
+        input_cache_read: [{ value: 0 }],
+      },
+    })
+    const v1 = mapZenMuxModel(m, PROVIDER_ID, {}, opts())
+    assert.equal(v1.cost.input, 0.03)
+    assert.deepEqual(
+      v1.cost.tiers?.map((t) => [t.tier.size, t.input]),
+      [
+        [32000, 0.06],
+        [128000, 0.12],
+      ]
+    )
+
+    const v2 = mapZenMuxModelInfo(m, PROVIDER_ID, {}, opts())
+    assert.deepEqual(
+      v2.cost.map((c) => c.tier?.size),
+      [undefined, 32000, 128000]
+    )
+  })
+
+  it('treats gt like gte and reads bare token units', () => {
+    const m = model({
+      pricings: {
+        prompt: [
+          { value: 2 },
+          { value: 4, conditions: { prompt_tokens: { gt: '100', unit: 'kTokens' } } },
+          { value: 9, conditions: { prompt_tokens: { gte: 200000 } } },
+        ],
+        completion: [{ value: 1 }],
+        input_cache_read: [{ value: 0 }],
+      },
+    })
+    const tiers = mapZenMuxModel(m, PROVIDER_ID, {}, opts()).cost.tiers
+    assert.deepEqual(
+      tiers?.map((t) => t.tier.size),
+      [100000, 200000]
+    )
+  })
+
+  it('resolves duplicate thresholds with the pricingTieBreak policy', () => {
+    const m = model({
+      pricings: {
+        prompt: [
+          { value: 0.003, conditions: { prompt_tokens: { unit: 'kTokens', gte: '0' } } },
+          { value: 0.006, conditions: { prompt_tokens: { unit: 'kTokens', gte: '0' } } },
+          { value: 0.01, conditions: { prompt_tokens: { unit: 'kTokens', gte: '32' } } },
+          { value: 0.02, conditions: { prompt_tokens: { unit: 'kTokens', gte: '32' } } },
+        ],
+        completion: [{ value: 1 }],
+        input_cache_read: [{ value: 0 }],
+      },
+    })
+
+    const lowest = mapZenMuxModel(m, PROVIDER_ID, {}, opts())
+    assert.equal(lowest.cost.input, 0.003)
+    assert.equal(lowest.cost.tiers?.[0].input, 0.01)
+
+    const highest = mapZenMuxModel(m, PROVIDER_ID, {}, opts({ pricingTieBreak: 'highest' }))
+    assert.equal(highest.cost.input, 0.006)
+    assert.equal(highest.cost.tiers?.[0].input, 0.02)
+
+    const v2 = mapZenMuxModelInfo(m, PROVIDER_ID, {}, opts())
+    assert.equal(v2.cost[0].input, 0.003)
+    assert.equal(v2.cost[1].input, 0.01)
+  })
+
+  it('uses the lowest price for condition-less duplicate entries by default', () => {
+    const m = model({
+      pricings: {
+        prompt: [{ value: 0.075 }, { value: 0.15 }, { value: 0.075 }],
+        completion: [{ value: 1 }],
+        input_cache_read: [{ value: 0 }],
+      },
+    })
+    assert.equal(mapZenMuxModel(m, PROVIDER_ID, {}, opts()).cost.input, 0.075)
+    assert.equal(
+      mapZenMuxModel(m, PROVIDER_ID, {}, opts({ pricingTieBreak: 'highest' })).cost.input,
+      0.15
+    )
   })
 
   it('treats missing pricings as zero cost without an extended tier', () => {
@@ -180,6 +291,39 @@ describe('reasoning_content', () => {
     const routing: Record<string, RoutingInfo> = { 'deepseek/deepseek-chat': { sdk: 'anthropic' } }
     const v1 = mapZenMuxModel(model({ id: 'deepseek/deepseek-chat' }), PROVIDER_ID, routing, opts())
     assert.equal(v1.capabilities.interleaved, false)
+  })
+})
+
+describe('tool capability', () => {
+  it('does not claim tools when a declared parameter list lacks them', () => {
+    const m = model({
+      _frontend: {
+        slug: 'acme/chat-model',
+        max_completion_tokens: null,
+        supported_parameters: 'max_tokens,temperature',
+      },
+    })
+    assert.equal(mapZenMuxModel(m, PROVIDER_ID, {}, opts()).capabilities.toolcall, false)
+    assert.equal(mapZenMuxModelInfo(m, PROVIDER_ID, {}, opts()).capabilities.tools, false)
+  })
+
+  it('claims tools when the declared list includes them', () => {
+    const m = model({
+      _frontend: {
+        slug: 'acme/chat-model',
+        max_completion_tokens: null,
+        supported_parameters: 'max_tokens,tools',
+      },
+    })
+    assert.equal(mapZenMuxModel(m, PROVIDER_ID, {}, opts()).capabilities.toolcall, true)
+    assert.equal(mapZenMuxModelInfo(m, PROVIDER_ID, {}, opts()).capabilities.tools, true)
+  })
+
+  it('falls back to text output when the parameter list is empty', () => {
+    const m = model({
+      _frontend: { slug: 'acme/chat-model', max_completion_tokens: null, supported_parameters: '' },
+    })
+    assert.equal(mapZenMuxModel(m, PROVIDER_ID, {}, opts()).capabilities.toolcall, true)
   })
 })
 
