@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- V2 types now come from `@opencode/plugin` (pinned to 2.3.0) instead of hand-written mirrors in `src/types.ts`. `@opencode-ai/plugin` remains the V1-only devDependency.
+
+### Fixed
+
+- On OpenCode 2.x a Location's first catalog read only returns registrations that already exist, so `setup()` now registers the provider and models before its first `await`. Config, routing, cache and models.dev loaders are synchronous to make that possible, and the first-run catalog is no longer empty.
+
 ## [0.5.0] - 2026-10-22
 
 ### Added

@@ -27,18 +27,27 @@ pnpm build          # tsc -p tsconfig.build.json -> dist/
   (`allowBuilds: false`) — it does **not** make this a monorepo.
 - ESM-only (`"type": "module"`, NodeNext). Import local files with a `.js` extension even though
   the source is `.ts`.
-- Runtime dependency is only `strip-json-comments`. `@opencode-ai/plugin` is a devDependency and
-  is type-only (erased from `dist`) — don't promote it to `dependencies` without reason.
+- Runtime dependency is only `strip-json-comments`. Both `@opencode-ai/plugin` (V1) and
+  `@opencode/plugin` (V2) are devDependencies and type-only (erased from `dist`) — don't promote
+  them to `dependencies` without reason.
+  `@opencode-ai/plugin` is the V1 package; its `dist/v2` types are stale, so never import V2 shapes
+  from it. V2 types come from `@opencode/plugin`, pinned to the OpenCode 2.x version you test
+  against (installed: 2.3.0) — bump it with the host, not on its own.
+  Branded ids/prices (`Model.ID`, `Money.USDPerMillionTokens`) are plain strings/numbers at runtime;
+  use `branded<T>()` from `src/types.ts` at the mapper boundary instead of hand-written mirrors.
 
 ## Architecture
 
 - **Dual V1/V2 plugin.** `src/index.ts` default-exports `{ id, setup, server }`. OpenCode 1.18.x
   calls `server()` (V1 `Hooks`: `config`, `auth`, `provider.models`); OpenCode 2.x calls
   `setup(ctx)` (provider/integration transform API). Keep both entrypoints.
-- **V2 `setup()` must register inside the host's short `await` window**, so it registers the
-  _cached_ catalog first (`readCachedModels`), then fetches live in the background and replays via
-  `provider.reload()`, repeating every `catalogCacheTTL`. The transform callbacks are synchronous
-  — do not `await` inside them.
+- **V2 `setup()` must call `ctx.provider.transform(...)` before its first `await`**: a Location's first
+  catalog read returns only registrations that already exist, so anything awaited before it silently
+  yields an empty catalog. That is why `readJsonc`, `loadZenMuxPluginConfig`, `loadRoutingTable`,
+  `readCacheSync` / `readCachedModels` and `loadReasoningContentSlugs` are synchronous — do not make
+  them async again. After registering the cached catalog it fetches live in the background and replays
+  via `provider.reload()`, repeating every `catalogCacheTTL`. The transform callbacks themselves are
+  synchronous — do not `await` inside them.
 - Module map (change shared logic once, not in both mappers):
   - `config.ts` / `routing.ts` — resolve `zenmux-plugin.json(c)` and the routing table; both use
     `jsonc.ts`.
@@ -60,9 +69,11 @@ pnpm build          # tsc -p tsconfig.build.json -> dist/
   `zenmux-providers.jsonc`, `zenmux-providers.json`, `zenmux-routing.jsonc`, `zenmux-routing.json`.
 - **Gotcha:** if `routingFile` is set but the file is missing, routing is _disabled_ — it does not
   fall back to the inline `routing` field or the default search. Preserve this behavior.
-- Routing entry `{ model, provider?, sdk? }`: `provider` rewrites `api.id` to
-  `modelId:providerSlug`; `sdk: "anthropic"` swaps to `@ai-sdk/anthropic` + `anthropicBaseURL`
-  (id stays plain when `provider` is absent). `routedModelIds: true` moves the suffix into `id` too.
+- Routing entry `{ model, provider?, sdk? }`: `provider` rewrites the upstream id — V1 `ModelV2.api.id`,
+  V2 `Model.Info.modelID` — to `modelId:providerSlug`. `sdk: "anthropic"` switches to `@ai-sdk/anthropic`
+  with `anthropicBaseURL` on V1, and to `@opencode/ai/providers/anthropic` with a per-model
+  `settings.baseURL` on V2 (id stays plain when `provider` is absent). `routedModelIds: true` moves the
+  suffix into `id` too.
 
 ## Style & release
 
