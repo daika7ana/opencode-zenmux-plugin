@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { opencodeCacheDir } from './cache.js'
 
@@ -7,9 +7,9 @@ import { opencodeCacheDir } from './cache.js'
  * cached models.dev catalog. Returns an empty set if the cache is missing or
  * unreadable so the static `reasoningContentModels` list remains the fallback.
  */
-export async function loadReasoningContentSlugs(): Promise<Set<string>> {
+export function loadReasoningContentSlugs(): Set<string> {
   try {
-    const raw = await readFile(join(opencodeCacheDir(), 'models.json'), 'utf-8')
+    const raw = readFileSync(join(opencodeCacheDir(), 'models.json'), 'utf-8')
     const data = JSON.parse(raw) as Record<
       string,
       { models?: Record<string, { interleaved?: { field?: string } }> }

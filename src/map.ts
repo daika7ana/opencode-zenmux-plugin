@@ -1,5 +1,6 @@
+import type { Model } from '@opencode/plugin'
+import { branded } from './types.js'
 import type {
-  ModelInfoV2,
   ModelV2,
   RoutingInfo,
   ZenMuxModel,
@@ -295,8 +296,8 @@ export function mapZenMuxModel(
   }
 }
 
-const V2_PACKAGE_OPENAI = '@opencode/ai/providers/openai-compatible'
-const V2_PACKAGE_ANTHROPIC = '@opencode/ai/providers/anthropic'
+export const V2_PACKAGE_OPENAI = '@opencode/ai/providers/openai-compatible'
+export const V2_PACKAGE_ANTHROPIC = '@opencode/ai/providers/anthropic'
 
 const MODALITY_ORDER = ['text', 'audio', 'image', 'video', 'pdf'] as const
 
@@ -321,35 +322,35 @@ export function mapZenMuxModelInfo(
   routing: Record<string, RoutingInfo>,
   opts: ZenMuxPluginOptions,
   reasoningContentSlugs?: Set<string>
-): ModelInfoV2 {
+): Model.Info {
   const r = resolveZenMuxModel(model, routing, opts, reasoningContentSlugs)
 
-  const cost: ModelInfoV2['cost'] = [
+  const cost = branded<Model.Info['cost']>([
     {
       input: r.cost.input,
       output: r.cost.output,
       cache: { read: r.cost.cache.read, write: r.cost.cache.write },
     },
     ...(r.cost.tiers ?? []),
-  ]
+  ])
 
   const parsed = model.publish_time ? Date.parse(model.publish_time) : NaN
   const released = Number.isNaN(parsed) ? 0 : Math.floor(parsed / 1000)
 
   return {
-    id: r.modelId,
-    modelID: r.apiId,
-    providerID,
-    family: model.owned_by,
+    id: branded<Model.Info['id']>(r.modelId),
+    modelID: branded<Model.Info['modelID']>(r.apiId),
+    providerID: branded<Model.Info['providerID']>(providerID),
+    family: branded<Model.Info['family']>(model.owned_by),
     name: model.display_name ?? model.id,
     capabilities: {
       tools: r.tools,
       input: modalityArray(r.input),
       output: modalityArray(r.output),
     },
-    variants: r.reasoning
-      ? Object.entries(r.variants).map(([id, settings]) => ({ id, settings }))
-      : [],
+    variants: branded<Model.Info['variants']>(
+      r.reasoning ? Object.entries(r.variants).map(([id, settings]) => ({ id, settings })) : []
+    ),
     time: { released },
     cost,
     status: 'active',

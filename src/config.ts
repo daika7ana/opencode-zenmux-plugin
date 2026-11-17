@@ -10,7 +10,7 @@ export function searchDirectories(projectDirectory: string): string[] {
   return [
     projectDirectory,
     join(projectDirectory, '.opencode'),
-    join(homedir(), '.config', 'opencode'),
+    join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'opencode'),
   ]
 }
 
@@ -24,12 +24,12 @@ export function searchDirectories(projectDirectory: string): string[] {
  *
  * Returns the parsed config, or null if no file is found.
  */
-export async function loadZenMuxPluginConfig(
+export function loadZenMuxPluginConfig(
   projectDirectory: string
-): Promise<Partial<ZenMuxPluginConfig> | null> {
+): Partial<ZenMuxPluginConfig> | null {
   for (const directory of searchDirectories(projectDirectory)) {
     for (const name of CONFIG_FILE_NAMES) {
-      const parsed = await readJsonc<Partial<ZenMuxPluginConfig>>(join(directory, name))
+      const parsed = readJsonc<Partial<ZenMuxPluginConfig>>(join(directory, name))
       if (parsed !== null) return parsed
     }
   }

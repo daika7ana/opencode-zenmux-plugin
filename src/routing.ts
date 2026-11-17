@@ -23,15 +23,17 @@ const ROUTING_FILE_NAMES = [
  * 5. ~/.config/opencode/<name>
  *
  * Returns a Record<modelId, RoutingInfo>; empty when no file is found.
+ * A set-but-missing `opts.routingFile` disables routing instead of falling back
+ * to inline `routing` or the default search.
  */
-export async function loadRoutingTable(
+export function loadRoutingTable(
   opts: ZenMuxPluginOptions,
   projectDirectory: string,
   inlineRouting?: ZenMuxRoutingTable
-): Promise<Record<string, RoutingInfo>> {
+): Record<string, RoutingInfo> {
   // 1. Explicit routingFile option takes precedence
   if (opts.routingFile) {
-    const parsed = await readJsonc<ZenMuxRoutingTable>(opts.routingFile)
+    const parsed = readJsonc<ZenMuxRoutingTable>(opts.routingFile)
     return parsed !== null ? normalizeRoutingTable(parsed) : {}
   }
 
@@ -43,7 +45,7 @@ export async function loadRoutingTable(
   // 3. Default routing file search
   for (const directory of searchDirectories(projectDirectory)) {
     for (const name of ROUTING_FILE_NAMES) {
-      const parsed = await readJsonc<ZenMuxRoutingTable>(join(directory, name))
+      const parsed = readJsonc<ZenMuxRoutingTable>(join(directory, name))
       if (parsed !== null) return normalizeRoutingTable(parsed)
     }
   }

@@ -64,7 +64,8 @@ export interface ZenMuxPluginOptions {
   routingFile: string | null
   /** Default limit.output tokens, used as fallback when max_completion_tokens is unavailable. Default: 16384 */
   defaultOutputTokens: number
-  /** Exclude models whose output modality is not text. Default: true */
+  /** Exclude models that cannot serve chat completions (suitable_api lacks chat.completions,
+   *  or output modalities lack text when frontend data is absent). Default: true */
   excludeNonChat: boolean
   /** Include the provider suffix in the model id itself. Default: false */
   routedModelIds: boolean
@@ -84,8 +85,8 @@ export interface ZenMuxPluginOptions {
   pricingTieBreak: 'lowest' | 'highest'
   /**
    * Model ids (substring match) whose responses use `reasoning_content` and must
-   * pass it back to the API on subsequent turns. Enables OpenCode's
-   * `interleaved: { field: 'reasoning_content' }` capability for these models.
+   * pass it back to the API on subsequent turns. V1 gets `interleaved`; V2 gets
+   * `compatibility.reasoningField`. Not applied to `sdk: "anthropic"` models.
    * The plugin also unions in any models that OpenCode's cached models.dev catalog
    * marks as needing `reasoning_content` passthrough.
    * Default: ['deepseek', 'glm', 'minimax', 'kimi', 'mimo']
@@ -165,76 +166,10 @@ export interface ModelV2 {
   variants?: Record<string, Record<string, unknown>>
 }
 
-/** Documented V2 model shape (@opencode/schema Model.Info), for the provider/model plugin API. */
-export interface ModelInfoV2 {
-  id: string
-  modelID: string
-  providerID: string
-  family?: string
-  name: string
-  capabilities: { tools: boolean; input: string[]; output: string[] }
-  variants: Array<{ id: string; settings?: Record<string, unknown> }>
-  time: { released: number }
-  cost: Array<{
-    tier?: { type: 'context'; size: number }
-    input: number
-    output: number
-    cache: { read: number; write: number }
-  }>
-  status: 'alpha' | 'beta' | 'deprecated' | 'active'
-  enabled: boolean
-  limit: { context: number; input?: number; output: number }
-  settings?: Record<string, unknown>
-  headers?: Record<string, string>
-  compatibility?: {
-    reasoningField?: 'reasoning' | 'reasoning_content' | 'reasoning_text' | string
-  }
-  package?: string
-}
+/** Documented V2 shapes come from `@opencode/plugin` (this package is V2-first). */
 
-/** Documented V2 provider shape (@opencode/schema Provider.Info). */
-export interface ProviderInfoV2 {
-  id: string
-  integrationID?: string
-  name: string
-  activation: 'auto' | 'enabled' | 'disabled'
-  package: string
-  settings?: Record<string, unknown>
-}
-
-/** Cleanup function optionally returned from a V2 setup() hook. */
-export type PluginCleanup = () => Promise<void> | void
-
-/** A registration returned by a V2 domain transform. */
-export interface V2Registration {
-  dispose(): Promise<void>
-}
-
-/** Minimal structural mirror of the 2.x provider editor (we only contribute). */
-export interface V2ProviderEditor {
-  add(input: { info: ProviderInfoV2; models: ModelInfoV2[] }): void
-}
-
-/** Minimal structural mirror of the 2.x integration editor (we only add methods). */
-export interface V2IntegrationEditor {
-  method: {
-    update(input: {
-      integrationID: string
-      method: { type: 'key'; label?: string } | { type: 'env'; names: string[] }
-    }): void
-  }
-}
-
-/** Minimal structural mirror of the 2.x plugin context. All domains optional so a
- *  runtime that lacks them degrades to a no-op instead of throwing. */
-export interface V2PluginContext {
-  options?: Record<string, unknown>
-  location?: { directory?: string }
-  provider?: {
-    transform(callback: (editor: V2ProviderEditor) => void): Promise<V2Registration>
-    reload(): Promise<void>
-  }
-  integration?: {
-    transform(callback: (editor: V2IntegrationEditor) => void): Promise<V2Registration>
-  }
+/** Plain ids/prices are `string`/`number` at runtime; the host types brand them
+ *  (Model.ID, Money.USDPerMillionTokens). Cast at the boundary, once. */
+export function branded<T>(value: unknown): T {
+  return value as T
 }

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
-import { fetchModels } from './fetch.js'
+import { fetchModels, readCachedModels } from './fetch.js'
 import { DEFAULT_OPTIONS, type ZenMuxModel, type ZenMuxPluginOptions } from './types.js'
 
 const originalFetch = globalThis.fetch
@@ -89,6 +89,20 @@ describe('fetchModels', () => {
     useFetch()
     const result = await fetchModels(opts({ catalogCacheTTL: Number.NaN }))
     assert.equal(result.length, 2)
+  })
+
+  it('ignores a cache entry that is not a model array', async () => {
+    useFetch()
+    await fetchModels(opts())
+    const [name] = await readdir(join(dir, 'opencode'))
+    await writeFile(
+      join(dir, 'opencode', name),
+      JSON.stringify({ fetchedAt: Date.now(), value: {} })
+    )
+
+    offline()
+    assert.equal(readCachedModels(opts()), null)
+    await assert.rejects(() => fetchModels(opts({ catalogCacheTTL: 0 })), /Failed to fetch models/)
   })
 
   it('filters non-chat models when excludeNonChat is set', async () => {

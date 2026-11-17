@@ -5,7 +5,7 @@ import type {
   ZenMuxModelsResponse,
   ZenMuxPluginOptions,
 } from './types.js'
-import { readCache, writeCache } from './cache.js'
+import { readCacheSync, writeCache } from './cache.js'
 
 type FrontendData = Pick<
   ZenMuxFrontendModel,
@@ -24,6 +24,9 @@ const REQUEST_TIMEOUT_MS = 30_000
  * When opts.excludeNonChat is true, models are filtered using suitable_api
  * (preferring "chat.completions" presence) with a fallback to
  * output_modalities.includes("text") when frontend data is unavailable.
+ *
+ * A stale cache is preferred over a failed fetch; `opencode models --refresh`
+ * (V1 only) bypasses the cache.
  */
 export async function fetchModels(opts: ZenMuxPluginOptions): Promise<ZenMuxModel[]> {
   const ttlMs = Number(opts.catalogCacheTTL) * 60_000
@@ -32,7 +35,7 @@ export async function fetchModels(opts: ZenMuxPluginOptions): Promise<ZenMuxMode
   const forceRefresh = isRefreshInvocation()
 
   if (!forceRefresh && cacheEnabled) {
-    const cached = await readCache<ZenMuxModel[]>(cacheName, ttlMs)
+    const cached = readCatalog(cacheName, ttlMs)
     if (cached) {
       return opts.excludeNonChat ? cached.filter(isChatModel) : cached
     }
@@ -43,7 +46,7 @@ export async function fetchModels(opts: ZenMuxPluginOptions): Promise<ZenMuxMode
     enriched = await fetchAndEnrich(opts)
   } catch (err) {
     // A stale catalog beats no catalog: serve the last good snapshot if we have one.
-    const stale = await readCachedModels(opts)
+    const stale = readCachedModels(opts)
     if (stale) return stale
     throw err
   }
@@ -57,22 +60,27 @@ export async function fetchModels(opts: ZenMuxPluginOptions): Promise<ZenMuxMode
 
 /**
  * Read the cached catalog without touching the network, ignoring TTL freshness.
- *
- * The V2 `setup()` hook must finish inside the host's short await window, so it
- * cannot afford the network round-trip. A stale catalog is better than no
- * catalog: the caller refreshes in the background and replays its transform.
  * Returns null when nothing is cached yet.
+ *
+ * Sync: V2 setup must register before its first `await`.
  */
-export async function readCachedModels(opts: ZenMuxPluginOptions): Promise<ZenMuxModel[] | null> {
-  const cached = await readCache<ZenMuxModel[]>(cacheFileName(opts), Number.POSITIVE_INFINITY)
+export function readCachedModels(opts: ZenMuxPluginOptions): ZenMuxModel[] | null {
+  const cached = readCatalog(cacheFileName(opts), Number.POSITIVE_INFINITY)
   if (!cached) return null
   return opts.excludeNonChat ? cached.filter(isChatModel) : cached
 }
 
+/** Cached catalog, or null when missing, stale, corrupt or not an array. */
+function readCatalog(cacheName: string, ttlMs: number): ZenMuxModel[] | null {
+  const cached = readCacheSync<ZenMuxModel[]>(cacheName, ttlMs)
+  return Array.isArray(cached) ? cached : null
+}
+
 /**
  * True when this process is an `opencode models --refresh` invocation, which
- * bypasses the disk cache and refetches (then rewrites the cache). Plugins run
- * in-process, so OpenCode's CLI args are visible here.
+ * bypasses the disk cache and refetches (then rewrites the cache). This is a
+ * V1-only path: OpenCode 1.x runs plugins in the CLI process, while 2.x runs
+ * them in the background server and dropped the `--refresh` flag.
  */
 function isRefreshInvocation(): boolean {
   const args = process.argv.slice(2)

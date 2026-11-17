@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, rename, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -21,9 +22,9 @@ interface CacheFile<T> {
  * Read a cached JSON value if it exists and is newer than `ttlMs`.
  * Returns null on any error (missing file, stale, corrupt, unreadable).
  */
-export async function readCache<T>(name: string, ttlMs: number): Promise<T | null> {
+export function readCacheSync<T>(name: string, ttlMs: number): T | null {
   try {
-    const raw = await readFile(join(opencodeCacheDir(), name), 'utf-8')
+    const raw = readFileSync(join(opencodeCacheDir(), name), 'utf-8')
     const data = JSON.parse(raw) as CacheFile<T>
     if (typeof data.fetchedAt !== 'number' || Date.now() - data.fetchedAt > ttlMs) return null
     return data.value

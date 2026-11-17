@@ -32,7 +32,7 @@ describe('loadRoutingTable', () => {
 
   it('rejects the legacy object form', async () => {
     const legacy = { 'acme/a': 'upstream' } as unknown as ZenMuxRoutingTable
-    await assert.rejects(() => loadRoutingTable(opts(), process.cwd(), legacy), /expected an array/)
+    assert.throws(() => loadRoutingTable(opts(), process.cwd(), legacy), /expected an array/)
   })
 
   it('disables routing when routingFile is set but missing (no inline fallback)', async () => {
